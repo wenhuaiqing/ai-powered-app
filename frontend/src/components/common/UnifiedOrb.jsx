@@ -1,6 +1,8 @@
 import { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { useLocation } from "react-router-dom";
 import { Send, X } from "lucide-react";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import AgentTrace from "../agents/AgentTrace.jsx";
 import { useTheme } from "../../context/ThemeContext.jsx";
 import { API_BASE_URL } from "../../config.js";
@@ -401,8 +403,10 @@ function AnswerCard({ data, t }) {
                     textTransform: "uppercase", color: t.accent, marginBottom: 6 }}>
         Answer
       </div>
-      <div style={{ fontSize: 13, color: t.text, lineHeight: 1.6, whiteSpace: "pre-wrap" }}>
-        {data.message}
+      <div style={{ fontSize: 13, color: t.text, lineHeight: 1.6, wordBreak: "break-word" }}>
+        <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents(t)}>
+          {data.message || ""}
+        </ReactMarkdown>
       </div>
       {Array.isArray(data.used_agents) && data.used_agents.length > 0 && (
         <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 10 }}>
@@ -532,4 +536,41 @@ function parseSseEvent(raw) {
 function pathToModule(path) {
   if (path === "/" || !path) return "dashboard";
   return path.slice(1).split("/")[0];
+}
+
+// Theme-aware components for ReactMarkdown so the rendered answer matches
+// the orb's purple/teal palette. `remark-gfm` is applied at the call-site
+// to autolink bare URLs and support strikethrough / tables.
+function markdownComponents(t) {
+  return {
+    p:      (props) => <p {...props} style={{ margin: "0 0 8px" }} />,
+    ul:     (props) => <ul {...props} style={{ margin: "0 0 8px", paddingLeft: 18 }} />,
+    ol:     (props) => <ol {...props} style={{ margin: "0 0 8px", paddingLeft: 18 }} />,
+    li:     (props) => <li {...props} style={{ marginBottom: 2 }} />,
+    strong: (props) => <strong {...props} style={{ fontWeight: 600, color: t.text }} />,
+    em:     (props) => <em {...props} style={{ fontStyle: "italic" }} />,
+    a:      (props) => (
+      <a
+        {...props}
+        target="_blank"
+        rel="noopener noreferrer"
+        style={{ color: t.accent, textDecoration: "underline", wordBreak: "break-all" }}
+      />
+    ),
+    code:   (props) => (
+      <code
+        {...props}
+        style={{
+          background: t.labelColBg,
+          padding: "1px 5px",
+          borderRadius: 4,
+          fontSize: 12,
+          fontFamily: "ui-monospace, Menlo, monospace",
+        }}
+      />
+    ),
+    h1: (props) => <h3 {...props} style={{ margin: "8px 0 6px", fontSize: 15, fontWeight: 600 }} />,
+    h2: (props) => <h3 {...props} style={{ margin: "8px 0 6px", fontSize: 14, fontWeight: 600 }} />,
+    h3: (props) => <h3 {...props} style={{ margin: "8px 0 4px", fontSize: 13, fontWeight: 600 }} />,
+  };
 }
