@@ -9,25 +9,19 @@ export default function AgentTrace({ events, running }) {
   const { t } = useTheme();
   if (!events.length && !running) return null;
 
-  // Group consecutive tool_call/tool_result by node so the cards collapse.
-  const cards = [];
-  for (const e of events) {
-    cards.push(e);
-  }
+  // Collapse per-node status: hide `node_start` if a matching `node_end`
+  // exists later in the stream. Each node renders as either a spinner
+  // (in-flight) or a tick (done), never both.
+  const renderEvents = events.filter((e, i) => {
+    if (e.event !== "node_start") return true;
+    return !events.slice(i + 1).some(
+      (later) => later.event === "node_end" && later.data?.name === e.data?.name
+    );
+  });
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-      {cards.map((e, i) => renderEvent(e, i, t))}
-      {running && (
-        <div style={{
-          display: "flex", alignItems: "center", gap: 8,
-          padding: "8px 10px",
-          color: t.textMuted, fontSize: 12,
-        }}>
-          <Loader2 size={14} className="spin" />
-          <span>Agents working...</span>
-        </div>
-      )}
+      {renderEvents.map((e, i) => renderEvent(e, i, t))}
       <style>{`@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } } .spin { animation: spin 1s linear infinite; }`}</style>
     </div>
   );
@@ -56,7 +50,9 @@ function renderEvent(e, i, t) {
     case "node_error":
       return <NodeErrorCard key={i} data={data} t={t} />;
     case "final_message":
-      return <FinalMessageCard key={i} data={data} t={t} />;
+      // The final answer is rendered separately as an AnswerCard outside
+      // the trace, so we skip the duplicate inside the Steps block.
+      return null;
     default:
       return null;
   }
