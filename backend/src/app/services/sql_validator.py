@@ -62,6 +62,19 @@ def _extract_tables(sql: str) -> set[str]:
     return tables
 
 
+def _extract_cte_names(sql: str) -> set[str]:
+    """Capture CTE names defined in WITH clauses so they're allowed in FROM."""
+    # Match `WITH name AS (` and `, name AS (`.
+    pattern = re.compile(
+        r"(?:\bwith\s+recursive\s+|\bwith\s+|,\s*)([\"`\w]+)\s+as\s*\(",
+        re.IGNORECASE,
+    )
+    return {
+        m.group(1).strip().strip('"').strip("`").lower()
+        for m in pattern.finditer(sql)
+    }
+
+
 def _has_limit(sql: str) -> bool:
     return re.search(r"\blimit\s+\d+", sql, re.IGNORECASE) is not None
 
@@ -91,7 +104,11 @@ def validate(sql: str) -> ValidationOutcome:
             errors.append(f"forbidden keyword: {kw}")
 
     tables = _extract_tables(cleaned)
-    not_allowed = sorted(t for t in tables if t not in ALLOWED_TABLES)
+    cte_names = _extract_cte_names(cleaned)
+    not_allowed = sorted(
+        t for t in tables
+        if t not in ALLOWED_TABLES and t not in cte_names
+    )
     if not_allowed:
         errors.append(f"table(s) not in allowlist: {', '.join(not_allowed)}")
 
