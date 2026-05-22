@@ -22,13 +22,19 @@ export default function App() {
 
       <main style={{ flex: 1, display: "flex", flexDirection: "column", minWidth: 0 }}>
         <HeaderBar routes={ROUTES} />
-        <div style={{ flex: 1, overflow: "auto", padding: "24px 28px" }}>
-          <Routes>
-            {ROUTES.map((r) => (
-              <Route key={r.to} path={r.to} element={<r.component />} />
-            ))}
-            <Route path="*" element={<Navigate to="/" replace />} />
-          </Routes>
+        {/* The scroll container intentionally has no padding so that sticky
+            children (e.g. Properties / Pipeline table headers) anchor flush
+            against the visible top of the scroll viewport. Padding lives on
+            the inner div so every page still gets the 24/28 inset. */}
+        <div style={{ flex: 1, overflow: "auto" }}>
+          <div style={{ padding: "24px 28px" }}>
+            <Routes>
+              {ROUTES.map((r) => (
+                <Route key={r.to} path={r.to} element={<r.component />} />
+              ))}
+              <Route path="*" element={<Navigate to="/" replace />} />
+            </Routes>
+          </div>
         </div>
       </main>
 
