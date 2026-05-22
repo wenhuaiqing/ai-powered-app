@@ -66,7 +66,7 @@ Tests: `cd backend && uv run pytest`.
 ## Reapit visual identity
 
 - Palette confirmed against reapit.com.au CTAs and the logo:
-  - Primary indigo `#4E56EA` (Reapit's CTA / arrow / button colour); used for active states, links, and primary buttons.
+  - Primary indigo `#4856EA` (Reapit's CTA / arrow / button colour); used for active states, links, and primary buttons.
   - Slate `#4A5A6B` is the wordmark colour — left to the logo SVG itself, not exposed as a theme token.
   - Teal accent `#0BAAB2` (darkened from logomark `#98C1C2` for white-bg contrast); reserved for AI badges + agent UI.
   - Brand red `#D1263D` for emphasis / alerts.

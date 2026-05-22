@@ -35,7 +35,7 @@ frontend/
   `Home/Dashboard.jsx` is the index ("/"). The sidebar comes from `navigation.js`
   which maps each section to an icon + display order.
 - **Theme tokens** — every styled element reads from `useTheme().t`. Primary
-  `t.accent` is Reapit indigo `#4E56EA` (the CTA / button / arrow colour
+  `t.accent` is Reapit indigo `#4856EA` (the CTA / button / arrow colour
   used on reapit.com.au); `t.accent2` is teal `#0BAAB2` (a darkened sibling
   of the logomark's `#98C1C2`) for AI badges and the second gradient stop.
   `t.dot.red` is the brand red `#D1263D` and `t.dot.yellow` is the brand

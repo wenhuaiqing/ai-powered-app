@@ -1,5 +1,5 @@
 // Lifted from mcnab-data-app/frontend/src/components/common/PlasmaOrb.jsx
-// and re-skinned to the Reapit brand palette: indigo base (#4E56EA, hue 237)
+// and re-skinned to the Reapit brand palette: indigo base (#4856EA, hue 237)
 // with teal (#0BAAB2, hue 183) ribbons and the brand red (#D1263D, hue 353)
 // as a sparking accent. Structure is identical to the original.
 import { Orb } from "react-ai-orb";
