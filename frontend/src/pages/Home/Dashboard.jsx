@@ -59,8 +59,8 @@ export default function Dashboard() {
         <p style={{ margin: 0, fontSize: 14, color: t.textMuted, lineHeight: 1.6, maxWidth: 720 }}>
           Mock of Reapit's AI-powered estate agency stack — multi-agent LangGraph
           orchestration, RAG over NSW regulations, text-to-DuckDB, live web search
-          via Tavily, and a RandomForest valuation model. Try the AppMarket
-          co-pilot bottom-right.
+          via Tavily, and a RandomForest valuation model. Say hi to
+          <strong style={{ color: t.text }}> Rai</strong>, the co-pilot bottom-right.
         </p>
       </div>
 
@@ -105,8 +105,8 @@ export default function Dashboard() {
             />
           ))}
           <div style={{ fontSize: 12, color: t.textMuted, marginTop: 4 }}>
-            Click any prompt to open the co-pilot and watch the planner route the
-            specialist agents.
+            Click any prompt to open <strong style={{ color: t.text }}>Rai</strong>, the
+            co-pilot, and watch the planner route the specialist agents.
           </div>
         </div>
       </section>

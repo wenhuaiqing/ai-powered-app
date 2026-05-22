@@ -1,7 +1,7 @@
 import { createContext, useContext, useState } from "react";
 
 // Reapit brand palette confirmed against reapit.com.au CTAs and the logo:
-//   #4E56EA  indigo  — primary CTA / buttons / arrows / active states
+//   #4856EA  indigo  — primary CTA / buttons / arrows / active states
 //   #4A5A6B  slate   — wordmark text (used by the logo SVG itself)
 //   #0BAAB2  teal    — AI accent (darkened sibling of logomark #98C1C2)
 //   #D1263D  red     — emphasis / alert
@@ -14,10 +14,10 @@ export const light = {
   bg: "#F4F6FB",                          // soft indigo-tinted grey
   surface: "#FFFFFF",
   surfaceRaised: "#FAFBFE",
-  border: "rgba(78,86,234,0.16)",
-  borderBright: "rgba(78,86,234,0.34)",
-  accent: "#4E56EA",                      // Reapit primary indigo
-  accentGlow: "rgba(78,86,234,0.10)",
+  border: "rgba(72,86,234,0.16)",
+  borderBright: "rgba(72,86,234,0.34)",
+  accent: "#4856EA",                      // Reapit primary indigo
+  accentGlow: "rgba(72,86,234,0.10)",
   accent2: "#0BAAB2",                     // teal — AI accent
   accent2Glow: "rgba(11,170,178,0.16)",
   text: "#171A2E",                        // near-black indigo
@@ -25,29 +25,29 @@ export const light = {
   textDim: "rgba(23,26,46,0.30)",
   sidebarBg: "#FFFFFF",
   sidebarText: "rgba(23,26,46,0.74)",
-  sidebarActive: "rgba(78,86,234,0.10)",
-  sidebarActiveText: "#4E56EA",
-  sidebarBorder: "rgba(78,86,234,0.10)",
-  rowHover: "rgba(78,86,234,0.06)",
-  rowDivider: "rgba(78,86,234,0.10)",
-  groupDivider: "rgba(78,86,234,0.45)",
-  gridDot: "rgba(78,86,234,0.07)",
-  labelColBg: "rgba(78,86,234,0.04)",
+  sidebarActive: "rgba(72,86,234,0.10)",
+  sidebarActiveText: "#4856EA",
+  sidebarBorder: "rgba(72,86,234,0.10)",
+  rowHover: "rgba(72,86,234,0.06)",
+  rowDivider: "rgba(72,86,234,0.10)",
+  groupDivider: "rgba(72,86,234,0.45)",
+  gridDot: "rgba(72,86,234,0.07)",
+  labelColBg: "rgba(72,86,234,0.04)",
   dot: {
     grey: "rgba(23,26,46,0.18)",
     green: "#0BAAB2",                     // teal
     yellow: "#FD9E1D",                    // brand orange
-    blue: "#4E56EA",                      // brand indigo
+    blue: "#4856EA",                      // brand indigo
     red: "#D1263D",                       // brand red
   },
   dotGlow: {
     green: "rgba(11,170,178,0.45)",
     yellow: "rgba(253,158,29,0.42)",
-    blue: "rgba(78,86,234,0.42)",
+    blue: "rgba(72,86,234,0.42)",
     red: "rgba(209,38,61,0.42)",
   },
-  colGroup: ["rgba(78,86,234,0.88)", "rgba(11,170,178,0.80)", "rgba(209,38,61,0.78)"],
-  colGroupDim: ["rgba(78,86,234,0.07)", "rgba(11,170,178,0.07)", "rgba(209,38,61,0.06)"],
+  colGroup: ["rgba(72,86,234,0.88)", "rgba(11,170,178,0.80)", "rgba(209,38,61,0.78)"],
+  colGroupDim: ["rgba(72,86,234,0.07)", "rgba(11,170,178,0.07)", "rgba(209,38,61,0.06)"],
 };
 
 export const dark = {
