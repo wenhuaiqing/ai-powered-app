@@ -161,7 +161,7 @@ function LeadTable({ items, t, onRowClick }) {
               <span style={{
                 fontSize: 10, fontWeight: 700, letterSpacing: "0.06em", textTransform: "uppercase",
                 padding: "2px 6px", borderRadius: 4,
-                background: urg.bg, color: urg.fg,
+                background: "transparent", color: urg.fg,
                 border: `1px solid ${urg.fg}`,
               }}>{it.urgency}</span>
             </div>
