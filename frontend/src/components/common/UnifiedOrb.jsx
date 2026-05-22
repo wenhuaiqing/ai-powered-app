@@ -193,10 +193,10 @@ export default function UnifiedOrb() {
             gap: 10,
           }}>
             <img
-              src="/reapit-logo.svg"
-              alt="Reapit"
+              src="/reapit-ai-logo.svg"
+              alt="Reapit AI"
               style={{
-                height: 20,
+                height: 30,
                 width: "auto",
                 filter: isDark ? "brightness(0) invert(1)" : "none",
                 flexShrink: 0,
