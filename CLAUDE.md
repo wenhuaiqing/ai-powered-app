@@ -65,6 +65,13 @@ Tests: `cd backend && uv run pytest`.
 
 ## Reapit visual identity
 
-- Primary purple `#5B2D8C`, accent teal `#0BC4B4`, white background, light-grey `#F6F7FA` section bands.
+- Palette confirmed against reapit.com.au CTAs and the logo:
+  - Primary indigo `#4E56EA` (Reapit's CTA / arrow / button colour); used for active states, links, and primary buttons.
+  - Slate `#4A5A6B` is the wordmark colour — left to the logo SVG itself, not exposed as a theme token.
+  - Teal accent `#0BAAB2` (darkened from logomark `#98C1C2` for white-bg contrast); reserved for AI badges + agent UI.
+  - Brand red `#D1263D` for emphasis / alerts.
+  - Brand orange `#FD9E1D` for warm highlights / yellow channel.
+  - White background, light indigo-tinted `#F4F6FB` section bands.
+- Logo at `frontend/public/reapit-logo.svg`; favicon at `frontend/public/favicon.png`.
 - Pill CTAs (`border-radius: 999px`), 12px card radius.
 - Lucide icons. Property-native vocabulary (Listings, Pipeline, Valuations, Compliance, Insights).

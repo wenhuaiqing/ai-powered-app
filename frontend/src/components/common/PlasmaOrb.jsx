@@ -1,26 +1,27 @@
 // Lifted from mcnab-data-app/frontend/src/components/common/PlasmaOrb.jsx
-// and re-skinned to Reapit purple/teal. Structure is identical so the orb
-// behaviour is the same — just different hues.
+// and re-skinned to the Reapit brand palette: indigo base (#4E56EA, hue 237)
+// with teal (#0BAAB2, hue 183) ribbons and the brand red (#D1263D, hue 353)
+// as a sparking accent. Structure is identical to the original.
 import { Orb } from "react-ai-orb";
 
 const PALETTE = {
-  mainBgStart:    "hsl(282, 60%, 75%)",
-  mainBgEnd:      "hsl(270, 60%, 22%)",
-  shadowColor1:   "hsla(282, 60%, 75%, 0)",
-  shadowColor2:   "hsla(272, 70%, 40%, 0.5)",
+  mainBgStart:    "hsl(237, 78%, 76%)",   // light indigo
+  mainBgEnd:      "hsl(237, 62%, 28%)",   // deep indigo
+  shadowColor1:   "hsla(237, 78%, 76%, 0)",
+  shadowColor2:   "hsla(237, 68%, 42%, 0.5)",
   shadowColor3:   "hsla(0, 0%, 100%, 0.6)",
-  shadowColor4:   "hsl(272, 70%, 32%)",
-  shapeAStart:    "hsl(176, 90%, 50%)",   // teal — AI accent
-  shapeAEnd:      "hsla(176, 90%, 75%, 0)",
-  shapeBStart:    "hsl(282, 75%, 55%)",
-  shapeBMiddle:   "hsl(272, 70%, 35%)",
-  shapeBEnd:      "hsla(282, 75%, 75%, 0)",
-  shapeCStart:    "hsla(176, 50%, 90%, 0)",
-  shapeCMiddle:   "hsla(176, 90%, 50%, 0.55)",
-  shapeCEnd:      "hsl(272, 70%, 22%)",
-  shapeDStart:    "hsla(282, 50%, 92%, 0)",
-  shapeDMiddle:   "hsla(282, 75%, 35%, 0.45)",
-  shapeDEnd:      "hsl(272, 70%, 14%)",
+  shadowColor4:   "hsl(237, 60%, 34%)",
+  shapeAStart:    "hsl(183, 88%, 38%)",   // teal — AI accent
+  shapeAEnd:      "hsla(183, 90%, 70%, 0)",
+  shapeBStart:    "hsl(237, 72%, 58%)",   // indigo
+  shapeBMiddle:   "hsl(237, 60%, 36%)",
+  shapeBEnd:      "hsla(237, 72%, 78%, 0)",
+  shapeCStart:    "hsla(353, 70%, 92%, 0)",
+  shapeCMiddle:   "hsla(353, 73%, 49%, 0.45)", // brand red flecks
+  shapeCEnd:      "hsl(237, 60%, 22%)",
+  shapeDStart:    "hsla(183, 50%, 92%, 0)",
+  shapeDMiddle:   "hsla(183, 70%, 40%, 0.40)",
+  shapeDEnd:      "hsl(237, 62%, 14%)",
 };
 
 const RING_KEYFRAMES = `
@@ -35,7 +36,7 @@ const RING_KEYFRAMES = `
 `;
 
 function OrbitingRings({ size }) {
-  const color = "hsla(176, 80%, 50%, 0.55)"; // teal-tinted rings
+  const color = "hsla(183, 78%, 38%, 0.55)"; // teal rings (Reapit accent2)
   const base = {
     position: "absolute",
     left: "50%", top: "50%",
@@ -83,7 +84,7 @@ export default function PlasmaOrb({ size = 56, isDark, style }) {
             size={2}
             animationSpeedBase={0.51}
             animationSpeedHue={0.76}
-            hueRotation={282}
+            hueRotation={237}
             blobAOpacity={1}
             blobBOpacity={1}
             mainOrbHueAnimation={false}

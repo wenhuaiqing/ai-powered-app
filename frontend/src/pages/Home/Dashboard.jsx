@@ -1,16 +1,20 @@
 import { useEffect, useState } from "react";
-import { Brain, MessageSquare, Sparkles } from "lucide-react";
+import {
+  ArrowUpRight, Brain, Calculator, Database, FileText, Globe2, MessageSquare,
+  ScaleIcon, Search, Sparkles, UserCheck,
+} from "lucide-react";
+import { useOrb } from "../../context/OrbContext.jsx";
 import { useTheme } from "../../context/ThemeContext.jsx";
 import { api, fmtAud, fmtInt } from "../../lib/api.js";
 
 const AGENTS = [
-  { name: "Compliance",   blurb: "NSW Fair Trading, Residential Tenancies, stamp duty, FIRB, strata. RAG over a curated corpus + Tavily web fallback." },
-  { name: "Data Query",   blurb: "Natural-language analytics over our DuckDB tables: properties, suburbs, listings, leads." },
-  { name: "Property Matcher", blurb: "Composes Data Query + suburb reviews + ML valuation to rank candidate suburbs for a buyer brief." },
-  { name: "Valuation",    blurb: "RandomForest price prediction (trained on 11k NSW sales) with per-feature contributions in AUD." },
-  { name: "Listing Drafter", blurb: "Generates listing copy from a property's attributes (structured-output LLM)." },
-  { name: "Lead Triage",  blurb: "Summarises a CRM lead, scores intent 1-5, suggests next actions." },
-  { name: "Market Watch", blurb: "Live web search via Tavily for current property-market news and recent regulatory changes." },
+  { name: "Compliance",       icon: ScaleIcon,   blurb: "NSW Fair Trading, Residential Tenancies, stamp duty, FIRB, strata. RAG over a curated corpus + Tavily web fallback." },
+  { name: "Data Query",       icon: Database,    blurb: "Natural-language analytics over our DuckDB tables: properties, suburbs, listings, leads." },
+  { name: "Property Matcher", icon: Search,      blurb: "Composes Data Query + suburb reviews + ML valuation to rank candidate suburbs for a buyer brief." },
+  { name: "Valuation",        icon: Calculator,  blurb: "RandomForest price prediction (trained on 11k NSW sales) with per-feature contributions in AUD." },
+  { name: "Listing Drafter",  icon: FileText,    blurb: "Generates listing copy from a property's attributes (structured-output LLM)." },
+  { name: "Lead Triage",      icon: UserCheck,   blurb: "Summarises a CRM lead, scores intent 1-5, suggests next actions." },
+  { name: "Market Watch",     icon: Globe2,      blurb: "Live web search via Tavily for current property-market news and recent regulatory changes." },
 ];
 
 const SAMPLES = [
@@ -22,6 +26,7 @@ const SAMPLES = [
 
 export default function Dashboard() {
   const { t } = useTheme();
+  const orb = useOrb();
   const [kpis, setKpis] = useState(null);
 
   useEffect(() => {
@@ -83,21 +88,7 @@ export default function Dashboard() {
           gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))",
           gap: 12,
         }}>
-          {AGENTS.map((a) => (
-            <div key={a.name} style={{
-              padding: "14px 16px",
-              background: t.surface,
-              border: `1px solid ${t.border}`,
-              borderRadius: 10,
-            }}>
-              <div style={{ fontSize: 13, fontWeight: 600, color: t.text, marginBottom: 6 }}>
-                {a.name}
-              </div>
-              <div style={{ fontSize: 12, color: t.textMuted, lineHeight: 1.55 }}>
-                {a.blurb}
-              </div>
-            </div>
-          ))}
+          {AGENTS.map((a) => <AgentCard key={a.name} agent={a} t={t} />)}
         </div>
       </section>
 
@@ -106,22 +97,61 @@ export default function Dashboard() {
         <SectionHeader title="Try a prompt" t={t} icon={MessageSquare} />
         <div style={{ display: "flex", flexDirection: "column", gap: 8, maxWidth: 720 }}>
           {SAMPLES.map((s, i) => (
-            <div key={i} style={{
-              padding: "10px 14px",
-              background: t.surface,
-              border: `1px dashed ${t.border}`,
-              borderRadius: 10,
-              fontSize: 13,
-              color: t.text,
-            }}>{s}</div>
+            <SamplePromptButton
+              key={i}
+              t={t}
+              prompt={s}
+              onClick={() => orb.openWithPrompt(s, { module: "dashboard" })}
+            />
           ))}
           <div style={{ fontSize: 12, color: t.textMuted, marginTop: 4 }}>
-            Open the co-pilot (bottom-right) and paste one to see the planner route the
+            Click any prompt to open the co-pilot and watch the planner route the
             specialist agents.
           </div>
         </div>
       </section>
     </div>
+  );
+}
+
+function SamplePromptButton({ t, prompt, onClick }) {
+  return (
+    <button
+      onClick={onClick}
+      style={{
+        display: "flex",
+        alignItems: "center",
+        gap: 10,
+        padding: "10px 14px 10px 16px",
+        background: t.surface,
+        border: `1px solid ${t.border}`,
+        borderRadius: 10,
+        fontSize: 13,
+        color: t.text,
+        fontFamily: "inherit",
+        cursor: "pointer",
+        textAlign: "left",
+        transition: "background .15s, border-color .15s, transform .12s",
+      }}
+      onMouseEnter={(e) => {
+        e.currentTarget.style.background = t.accentGlow;
+        e.currentTarget.style.borderColor = t.accent;
+        e.currentTarget.style.transform = "translateX(2px)";
+        const arrow = e.currentTarget.querySelector("[data-arrow]");
+        if (arrow) arrow.style.color = t.accent;
+      }}
+      onMouseLeave={(e) => {
+        e.currentTarget.style.background = t.surface;
+        e.currentTarget.style.borderColor = t.border;
+        e.currentTarget.style.transform = "translateX(0)";
+        const arrow = e.currentTarget.querySelector("[data-arrow]");
+        if (arrow) arrow.style.color = t.textMuted;
+      }}
+    >
+      <MessageSquare size={13} color={t.accent2} style={{ flexShrink: 0 }} />
+      <span style={{ flex: 1 }}>{prompt}</span>
+      <ArrowUpRight size={14} data-arrow style={{ color: t.textMuted, flexShrink: 0, transition: "color .15s" }} />
+    </button>
   );
 }
 
@@ -136,22 +166,77 @@ function SectionHeader({ title, t, icon: Icon }) {
   );
 }
 
+// KPI cards are "live state" — indigo-tinted, bold accent numbers, left-rule
+// stripe. Visually distinct from the neutral white "capability" agent cards.
 function KpiCard({ t, label, value, sub }) {
   return (
     <div style={{
-      padding: "12px 14px",
-      background: t.surface,
+      position: "relative",
+      padding: "14px 14px 14px 18px",
+      background: t.accentGlow,
       border: `1px solid ${t.border}`,
       borderRadius: 10,
+      overflow: "hidden",
     }}>
-      <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.06em",
-                    textTransform: "uppercase", color: t.textMuted, marginBottom: 4 }}>
+      <div style={{
+        position: "absolute",
+        left: 0, top: 0, bottom: 0,
+        width: 3,
+        background: t.accent,
+      }} />
+      <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.08em",
+                    textTransform: "uppercase", color: t.accent, marginBottom: 6 }}>
         {label}
       </div>
-      <div style={{ fontSize: 20, fontWeight: 700, color: t.text, letterSpacing: "-0.01em" }}>
+      <div style={{ fontSize: 24, fontWeight: 700, color: t.text, letterSpacing: "-0.02em", lineHeight: 1 }}>
         {value}
       </div>
-      {sub && <div style={{ fontSize: 11, color: t.textMuted, marginTop: 3 }}>{sub}</div>}
+      {sub && <div style={{ fontSize: 11, color: t.textMuted, marginTop: 5 }}>{sub}</div>}
+    </div>
+  );
+}
+
+// Agent cards are "capabilities" — neutral surface, icon avatar, AI badge.
+// Hover lifts the border to accent so the card feels interactive even though
+// it doesn't navigate anywhere yet.
+function AgentCard({ agent, t }) {
+  const Icon = agent.icon || Brain;
+  return (
+    <div
+      style={{
+        padding: "14px 16px",
+        background: t.surface,
+        border: `1px solid ${t.border}`,
+        borderRadius: 10,
+        display: "flex",
+        gap: 12,
+        transition: "border-color .15s ease, transform .15s ease",
+      }}
+      onMouseEnter={(e) => { e.currentTarget.style.borderColor = t.accent; e.currentTarget.style.transform = "translateY(-1px)"; }}
+      onMouseLeave={(e) => { e.currentTarget.style.borderColor = t.border; e.currentTarget.style.transform = "translateY(0)"; }}
+    >
+      <div style={{
+        width: 36, height: 36, borderRadius: 9,
+        background: t.accent2Glow,
+        display: "flex", alignItems: "center", justifyContent: "center",
+        color: t.accent2,
+        flexShrink: 0,
+      }}>
+        <Icon size={17} strokeWidth={1.8} />
+      </div>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4 }}>
+          <span style={{ fontSize: 13, fontWeight: 600, color: t.text }}>{agent.name}</span>
+          <span style={{
+            fontSize: 9, fontWeight: 700, letterSpacing: "0.08em",
+            padding: "1px 5px", borderRadius: 3, lineHeight: "12px",
+            background: t.accent2Glow, color: t.accent2,
+          }}>AI</span>
+        </div>
+        <div style={{ fontSize: 12, color: t.textMuted, lineHeight: 1.55 }}>
+          {agent.blurb}
+        </div>
+      </div>
     </div>
   );
 }

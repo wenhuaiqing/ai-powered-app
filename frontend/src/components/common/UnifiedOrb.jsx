@@ -159,7 +159,7 @@ export default function UnifiedOrb() {
     }
   }, [open]);
 
-  const panelBg = isDark ? "rgba(13,10,28,0.97)" : "rgba(255,255,255,0.98)";
+  const panelBg = isDark ? "rgba(14,16,36,0.97)" : "rgba(255,255,255,0.98)";
   const panelStyle = {
     position: "absolute",
     bottom: 92,
@@ -173,8 +173,8 @@ export default function UnifiedOrb() {
     borderRadius: 16,
     backdropFilter: "blur(16px)",
     boxShadow: isDark
-      ? "0 8px 40px rgba(0,0,0,0.6), 0 0 0 1px rgba(91,45,140,0.22)"
-      : "0 8px 40px rgba(0,0,0,0.12), 0 0 0 1px rgba(91,45,140,0.10)",
+      ? `0 8px 40px rgba(0,0,0,0.6), 0 0 0 1px ${t.borderBright}`
+      : `0 8px 40px rgba(0,0,0,0.12), 0 0 0 1px ${t.border}`,
     overflow: "hidden",
     transformOrigin: "bottom right",
     animation: closing ? "uo-fadeOut .18s ease forwards" : "uo-fadeIn .22s cubic-bezier(0.34,1.56,0.64,1) forwards",
@@ -192,10 +192,16 @@ export default function UnifiedOrb() {
             alignItems: "center",
             gap: 10,
           }}>
-            <div style={{
-              width: 26, height: 26, borderRadius: 7,
-              background: `linear-gradient(135deg, ${t.accent} 0%, ${t.accent2} 100%)`,
-            }} />
+            <img
+              src="/reapit-logo.svg"
+              alt="Reapit"
+              style={{
+                height: 20,
+                width: "auto",
+                filter: isDark ? "brightness(0) invert(1)" : "none",
+                flexShrink: 0,
+              }}
+            />
             <div style={{ flex: 1, lineHeight: 1.1 }}>
               <div style={{ fontSize: 14, fontWeight: 600, color: t.text }}>AppMarket co-pilot</div>
               <div style={{ fontSize: 11, color: t.textMuted, marginTop: 2 }}>
@@ -488,7 +494,7 @@ function pathToModule(path) {
 }
 
 // Theme-aware components for ReactMarkdown so the rendered answer matches
-// the orb's purple/teal palette. `remark-gfm` is applied at the call-site
+// the orb's Reapit slate/teal palette. `remark-gfm` is applied at the call-site
 // to autolink bare URLs and support strikethrough / tables.
 function markdownComponents(t) {
   return {

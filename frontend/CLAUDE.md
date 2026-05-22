@@ -35,8 +35,11 @@ frontend/
   `Home/Dashboard.jsx` is the index ("/"). The sidebar comes from `navigation.js`
   which maps each section to an icon + display order.
 - **Theme tokens** — every styled element reads from `useTheme().t`. Primary
-  `t.accent` is Reapit purple `#5B2D8C`; `t.accent2` is teal `#0BC4B4` for AI
-  badges and the second gradient stop.
+  `t.accent` is Reapit indigo `#4E56EA` (the CTA / button / arrow colour
+  used on reapit.com.au); `t.accent2` is teal `#0BAAB2` (a darkened sibling
+  of the logomark's `#98C1C2`) for AI badges and the second gradient stop.
+  `t.dot.red` is the brand red `#D1263D` and `t.dot.yellow` is the brand
+  orange `#FD9E1D`. The slate `#4A5A6B` is only inside the logo SVG itself.
 - **Inline styles** — matches mcnab-data-app's pattern. No CSS-in-JS dep.
 - **Icons** — `lucide-react`. Property-native: Building2, Users, Calculator,
   Scale, LineChart, Home.
