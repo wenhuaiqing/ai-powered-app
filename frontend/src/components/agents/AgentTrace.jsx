@@ -1,5 +1,6 @@
 import { AlertCircle, Brain, CheckCircle2, Loader2 } from "lucide-react";
 import { useTheme } from "../../context/ThemeContext.jsx";
+import { fmtAud } from "../../lib/api.js";
 import AgentBadge from "./AgentBadge.jsx";
 import ToolCallCard from "./ToolCallCard.jsx";
 
@@ -97,13 +98,110 @@ function NodeStartCard({ data, t }) {
 }
 
 function NodeEndCard({ data, t }) {
+  const summary = renderResultSummary(data.name, data.result, t);
   return (
-    <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "2px 4px" }}>
-      <CheckCircle2 size={12} color={t.accent2} />
+    <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "2px 4px", flexWrap: "wrap" }}>
+      <CheckCircle2 size={12} color={t.accent2} style={{ flexShrink: 0 }} />
       <AgentBadge name={data.name} />
-      <span style={{ fontSize: 12, color: t.textMuted }}>complete</span>
+      {summary || <span style={{ fontSize: 12, color: t.textMuted }}>complete</span>}
     </div>
   );
+}
+
+// Per-agent one-line summary rendered inside the node_end row. Each agent
+// produces a typed result with different fields, so we dispatch on name and
+// pull only the headline stats. Full payloads stay in the typed contract;
+// the orb's AnswerCard still renders the synthesised reply below.
+function renderResultSummary(name, result, t) {
+  if (!result) return null;
+  const muted    = { fontSize: 12, color: t.textMuted };
+  const strong   = { fontSize: 12, color: t.text, fontWeight: 600 };
+  const sep      = <span style={muted}>·</span>;
+
+  switch (name) {
+    case "compliance": {
+      const n = result.citations?.length || 0;
+      if (n === 0) return <span style={muted}>no citations</span>;
+      const top = result.citations[0];
+      const fb = result.used_web_fallback;
+      return (
+        <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+          <span style={strong}>{n} citation{n === 1 ? "" : "s"}</span> {sep}
+          <span style={muted}>{top.source}</span>
+          {fb && <>{sep}<span style={{ ...muted, color: t.dot.yellow, fontWeight: 600 }}>web fallback</span></>}
+        </span>
+      );
+    }
+    case "valuation": {
+      const p = result.predicted_price;
+      const ci = result.confidence_interval || [0, 0];
+      if (!p) return null;
+      return (
+        <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+          <span style={strong}>{fmtAud(p, { short: true })}</span> {sep}
+          <span style={muted}>80% CI {fmtAud(ci[0], { short: true })}–{fmtAud(ci[1], { short: true })}</span>
+        </span>
+      );
+    }
+    case "matcher": {
+      const c = result.candidates || [];
+      const top = c[0]?.suburb;
+      if (c.length === 0) return <span style={muted}>no candidates</span>;
+      return (
+        <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+          <span style={strong}>{c.length} candidate{c.length === 1 ? "" : "s"}</span>
+          {top && <>{sep}<span style={muted}>top: {top}</span></>}
+        </span>
+      );
+    }
+    case "data_query": {
+      const cols = result.columns?.length || 0;
+      const rows = result.row_count ?? 0;
+      if (!result.validation_passed) {
+        return <span style={{ ...muted, color: t.dot.red }}>validation failed</span>;
+      }
+      return (
+        <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+          <span style={strong}>{rows} row{rows === 1 ? "" : "s"} × {cols} col{cols === 1 ? "" : "s"}</span>
+        </span>
+      );
+    }
+    case "listing": {
+      const head = result.headline || "";
+      if (!head) return null;
+      return <span style={muted}>“{truncate(head, 60)}”</span>;
+    }
+    case "lead_triage": {
+      if (!result.intent_score) return null;
+      return (
+        <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+          <span style={strong}>intent {result.intent_score}/5</span> {sep}
+          <span style={muted}>{result.urgency} urgency</span>
+        </span>
+      );
+    }
+    case "market_watch": {
+      const h = result.hits || [];
+      if (h.length === 0) return <span style={muted}>no hits</span>;
+      const top = h[0]?.title;
+      return (
+        <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+          <span style={strong}>{h.length} hit{h.length === 1 ? "" : "s"}</span>
+          {top && <>{sep}<span style={muted}>top: {truncate(top, 44)}</span></>}
+        </span>
+      );
+    }
+    case "planner":
+    case "summariser":
+    default:
+      // Planner has its own card; summariser is shown as AnswerCard.
+      return null;
+  }
+}
+
+function truncate(s, n) {
+  if (!s) return "";
+  return s.length > n ? s.slice(0, n - 1) + "…" : s;
 }
 
 function NodeErrorCard({ data, t }) {
@@ -128,27 +226,3 @@ function NodeErrorCard({ data, t }) {
   );
 }
 
-function FinalMessageCard({ data, t }) {
-  return (
-    <div style={{
-      background: `linear-gradient(135deg, ${t.accentGlow} 0%, ${t.accent2Glow} 100%)`,
-      border: `1px solid ${t.borderBright}`,
-      borderRadius: 10,
-      padding: "12px 14px",
-      marginTop: 4,
-    }}>
-      <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.06em",
-                    textTransform: "uppercase", color: t.accent, marginBottom: 6 }}>
-        Answer
-      </div>
-      <div style={{ fontSize: 13, color: t.text, lineHeight: 1.6, whiteSpace: "pre-wrap" }}>
-        {data.message}
-      </div>
-      {data.used_agents?.length > 0 && (
-        <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 10 }}>
-          {data.used_agents.map((a, i) => <AgentBadge key={i} name={a} />)}
-        </div>
-      )}
-    </div>
-  );
-}

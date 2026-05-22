@@ -212,7 +212,8 @@ function Table({ items, t, onRowClick }) {
             <span style={{
               fontSize: 10, fontWeight: 700, letterSpacing: "0.06em", textTransform: "uppercase",
               padding: "2px 6px", borderRadius: 4,
-              background: t.bg, color: stageColor[it.stage] || t.textMuted,
+              background: "transparent",
+              color: stageColor[it.stage] || t.textMuted,
               border: `1px solid ${stageColor[it.stage] || t.border}`,
             }}>{it.stage}</span>
             <span style={{ color: t.textMuted }}>{it.agent_name}</span>

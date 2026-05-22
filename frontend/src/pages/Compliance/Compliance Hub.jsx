@@ -192,7 +192,7 @@ function Citation({ t, c }) {
           color: c.source_type === "web" ? t.dot.yellow : t.accent,
         }}>{c.source_type === "web" ? "live web" : "local corpus"}</span>
         <span style={{ flex: 1 }} />
-        <span style={{ fontSize: 11, color: t.textMuted }}>score {Number(c.score).toFixed(2)}</span>
+        <RelevanceMeter t={t} score={Number(c.score)} />
       </div>
       <div style={{ fontSize: 13, color: t.text, lineHeight: 1.55, whiteSpace: "pre-wrap" }}>
         {c.snippet}
@@ -211,4 +211,46 @@ function Citation({ t, c }) {
       )}
     </article>
   );
+}
+
+// Cosine scores from text-embedding-3-small sit in a roughly 0.3-1.0 band
+// for relevant matches. Showing the raw decimal reads as a percentage and
+// confuses non-experts ("0.37 means 37%?"). A tinted bar with a verbal
+// label communicates the same thing intuitively.
+function RelevanceMeter({ t, score }) {
+  const { label, color } = strengthBucket(t, score);
+  // Map cosine 0.3-0.9 to 5-100% bar fill so even weak matches show a sliver.
+  const pct = Math.max(5, Math.min(100, ((score - 0.3) / 0.6) * 100));
+  return (
+    <span
+      title={`cosine score: ${score.toFixed(3)}`}
+      style={{ display: "inline-flex", alignItems: "center", gap: 8 }}
+    >
+      <span style={{
+        position: "relative",
+        width: 56, height: 4,
+        background: t.labelColBg,
+        borderRadius: 2,
+        overflow: "hidden",
+      }}>
+        <span style={{
+          position: "absolute", left: 0, top: 0, bottom: 0,
+          width: `${pct}%`,
+          background: color,
+        }} />
+      </span>
+      <span style={{
+        fontSize: 10, fontWeight: 700, letterSpacing: "0.06em",
+        textTransform: "uppercase", color,
+        minWidth: 38, textAlign: "right",
+      }}>{label}</span>
+    </span>
+  );
+}
+
+function strengthBucket(t, score) {
+  if (score >= 0.7) return { label: "Strong", color: t.accent };
+  if (score >= 0.5) return { label: "Match",  color: t.accent2 };
+  if (score >= 0.4) return { label: "Partial", color: t.dot.yellow };
+  return { label: "Weak", color: t.textMuted };
 }
