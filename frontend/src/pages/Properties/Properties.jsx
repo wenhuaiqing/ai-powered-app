@@ -143,12 +143,14 @@ const stageColors = (t) => ({
 
 function Table({ items, t, onRowClick }) {
   const stageColor = stageColors(t);
+  const last = items.length - 1;
   return (
     <div style={{
       background: t.surface,
       border: `1px solid ${t.border}`,
       borderRadius: 12,
-      overflow: "hidden",
+      // No overflow: hidden — it would scope `position: sticky` to this
+      // non-scrolling container and the header would never stick.
     }}>
       <div style={{
         display: "grid",
@@ -162,6 +164,13 @@ function Table({ items, t, onRowClick }) {
         color: t.textMuted,
         background: t.bg,
         borderBottom: `1px solid ${t.border}`,
+        // Sticks to the top of the page-level scroller (in App.jsx) so the
+        // column labels stay visible while scrolling through 60 listings.
+        position: "sticky",
+        top: 0,
+        zIndex: 2,
+        borderTopLeftRadius: 11,
+        borderTopRightRadius: 11,
       }}>
         <div>Suburb</div>
         <div>Type</div>
@@ -176,7 +185,7 @@ function Table({ items, t, onRowClick }) {
           No properties match this filter.
         </div>
       )}
-      {items.map((it) => (
+      {items.map((it, idx) => (
         <button
           key={it.listing_id}
           onClick={() => onRowClick(it.listing_id)}
@@ -188,7 +197,9 @@ function Table({ items, t, onRowClick }) {
             width: "100%",
             background: "transparent",
             border: "none",
-            borderBottom: `1px solid ${t.rowDivider}`,
+            borderBottom: idx === last ? "none" : `1px solid ${t.rowDivider}`,
+            borderBottomLeftRadius:  idx === last ? 11 : 0,
+            borderBottomRightRadius: idx === last ? 11 : 0,
             color: t.text,
             fontFamily: "inherit",
             fontSize: 13,
