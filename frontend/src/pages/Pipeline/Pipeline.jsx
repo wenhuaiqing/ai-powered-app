@@ -93,8 +93,15 @@ function Header({ t, count }) {
 }
 
 function LeadTable({ items, t, onRowClick }) {
+  const last = items.length - 1;
   return (
-    <div style={{ background: t.surface, border: `1px solid ${t.border}`, borderRadius: 12, overflow: "hidden" }}>
+    <div style={{
+      background: t.surface,
+      border: `1px solid ${t.border}`,
+      borderRadius: 12,
+      // No overflow: hidden — would scope position: sticky to this
+      // non-scrolling container and break the sticky header.
+    }}>
       <div style={{
         display: "grid",
         gridTemplateColumns: "1.3fr 1fr 1fr 0.8fr 0.6fr",
@@ -107,6 +114,11 @@ function LeadTable({ items, t, onRowClick }) {
         color: t.textMuted,
         background: t.bg,
         borderBottom: `1px solid ${t.border}`,
+        position: "sticky",
+        top: 0,
+        zIndex: 2,
+        borderTopLeftRadius: 11,
+        borderTopRightRadius: 11,
       }}>
         <div>Lead</div>
         <div>Intent / area</div>
@@ -117,7 +129,7 @@ function LeadTable({ items, t, onRowClick }) {
       {items.length === 0 && (
         <div style={{ padding: "16px 14px", color: t.textMuted, fontSize: 13 }}>No leads yet.</div>
       )}
-      {items.map((it) => {
+      {items.map((it, idx) => {
         const urg = URGENCY_COLOR(t, it.urgency);
         const intentColor = INTENT_COLOR(t, it.intent);
         return (
@@ -132,7 +144,9 @@ function LeadTable({ items, t, onRowClick }) {
               width: "100%",
               background: "transparent",
               border: "none",
-              borderBottom: `1px solid ${t.rowDivider}`,
+              borderBottom: idx === last ? "none" : `1px solid ${t.rowDivider}`,
+              borderBottomLeftRadius:  idx === last ? 11 : 0,
+              borderBottomRightRadius: idx === last ? 11 : 0,
               color: t.text,
               fontFamily: "inherit",
               fontSize: 13,
