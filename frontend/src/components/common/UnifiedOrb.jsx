@@ -4,8 +4,9 @@ import { Send, X } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import AgentTrace from "../agents/AgentTrace.jsx";
+import { useOrb } from "../../context/OrbContext.jsx";
 import { useTheme } from "../../context/ThemeContext.jsx";
-import { API_BASE_URL } from "../../config.js";
+import { appendEventToList, streamAgent } from "../../lib/orbStream.js";
 
 const PlasmaOrb = lazy(() => import("./PlasmaOrb.jsx"));
 
@@ -38,6 +39,7 @@ const SAMPLE_PROMPTS = [
 export default function UnifiedOrb() {
   const { t, isDark } = useTheme();
   const location = useLocation();
+  const orb = useOrb();
   const [open, setOpen] = useState(false);
   const [closing, setClosing] = useState(false);
   const [input, setInput] = useState("");
@@ -63,25 +65,23 @@ export default function UnifiedOrb() {
     setTimeout(() => { setOpen(false); setClosing(false); }, 180);
   }, []);
 
-  const submit = useCallback(async (override) => {
-    const text = (typeof override === "string" ? override : input).trim();
-    if (!text || running) return;
+  // Drive a streamed orb call. `path` is /orb/chat or /orb/run-agent.
+  // `userMessage` is what shows in the conversation as the user bubble.
+  // `requestBody` is the JSON sent to the backend.
+  const runStream = useCallback(async (path, userMessage, requestBody) => {
+    if (running) return;
     const startTs = performance.now();
-    setInput("");
     setError(null);
-    // Push user + an empty trace placeholder for this turn.
     setMessages((prev) => [
       ...prev,
-      { role: "user", content: text },
+      { role: "user", content: userMessage },
       { role: "trace", events: [], running: true, durationMs: null },
     ]);
     setRunning(true);
 
-    // Mutate ONLY the last trace message as new events stream in.
     const pushEvent = (evt) => {
       setMessages((prev) => {
         const next = prev.slice();
-        // Find the last trace message — it's always the tail trace.
         for (let i = next.length - 1; i >= 0; i--) {
           if (next[i].role === "trace") {
             next[i] = { ...next[i], events: appendEventToList(next[i].events, evt) };
@@ -92,26 +92,11 @@ export default function UnifiedOrb() {
       });
     };
 
-    const pageContext = {
-      module: pathToModule(location.pathname),
-      current_item: null,
-    };
-
     const controller = new AbortController();
     abortRef.current = controller;
 
     try {
-      const res = await fetch(`${API_BASE_URL}/orb/chat`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", "Accept": "text/event-stream" },
-        body: JSON.stringify({ message: text, page_context: pageContext }),
-        signal: controller.signal,
-      });
-      if (!res.ok || !res.body) {
-        const detail = await res.text().catch(() => "");
-        throw new Error(`HTTP ${res.status} ${detail.slice(0, 200)}`);
-      }
-      for await (const evt of readSseStream(res.body, controller.signal)) {
+      for await (const evt of streamAgent(path, requestBody, controller.signal)) {
         if (evt.event === "done") break;
         if (evt.event === "final_message") {
           setMessages((prev) => [...prev, { role: "answer", data: evt.data }]);
@@ -119,9 +104,7 @@ export default function UnifiedOrb() {
         pushEvent(evt);
       }
     } catch (e) {
-      if (e?.name !== "AbortError") {
-        setError(String(e?.message || e));
-      }
+      if (e?.name !== "AbortError") setError(String(e?.message || e));
     } finally {
       const durationMs = performance.now() - startTs;
       setMessages((prev) => {
@@ -137,7 +120,37 @@ export default function UnifiedOrb() {
       setRunning(false);
       abortRef.current = null;
     }
-  }, [input, running, location.pathname]);
+  }, [running]);
+
+  const submit = useCallback(async (override) => {
+    const text = (typeof override === "string" ? override : input).trim();
+    if (!text || running) return;
+    setInput("");
+    const pageContext = { module: pathToModule(location.pathname), current_item: null };
+    await runStream("/orb/chat", text, { message: text, page_context: pageContext });
+  }, [input, running, location.pathname, runStream]);
+
+  // Consume pending instructions from the OrbContext — module pages call
+  // useOrb().runAgent(...) or .openWithPrompt(...) and this picks them up.
+  useEffect(() => {
+    if (!orb?.pending) return;
+    const p = orb.pending;
+    orb.consume();
+    setOpen(true);
+    if (p.mode === "chat") {
+      const ctx = { module: pathToModule(location.pathname), current_item: null, ...(p.page_context || {}) };
+      runStream("/orb/chat", p.message, { message: p.message, page_context: ctx });
+    } else if (p.mode === "run-agent") {
+      const ctx = { module: pathToModule(location.pathname), current_item: null, ...(p.page_context || {}) };
+      const userMessage = p.message || `Run the ${p.agent} agent`;
+      runStream("/orb/run-agent", userMessage, {
+        agent: p.agent,
+        inputs: p.inputs || {},
+        message: p.message || "",
+        page_context: ctx,
+      });
+    }
+  }, [orb?.pending, orb, runStream, location.pathname]);
 
   // Stop any in-flight stream if the orb closes.
   useEffect(() => {
@@ -467,70 +480,6 @@ function iconBtn(t) {
     alignItems: "center",
     borderRadius: 6,
   };
-}
-
-function appendEventToList(list, evt) {
-  // Merge tool_result into the most recent matching tool_call so the trace
-  // shows one card per tool call with the result preview attached.
-  if (evt.event === "tool_result") {
-    for (let i = list.length - 1; i >= 0; i--) {
-      const p = list[i];
-      if (p.event === "tool_call"
-          && p.data?.node === evt.data?.node
-          && p.data?.tool === evt.data?.tool
-          && !p.toolResultPreview) {
-        const next = list.slice();
-        next[i] = { ...p, toolResultPreview: evt.data.preview };
-        return next;
-      }
-    }
-    return [...list, evt]; // no matching tool_call seen — keep it raw
-  }
-  return [...list, evt];
-}
-
-async function* readSseStream(stream, signal) {
-  const reader = stream.getReader();
-  const decoder = new TextDecoder();
-  let buffer = "";
-  while (true) {
-    if (signal?.aborted) return;
-    const { value, done } = await reader.read();
-    if (done) {
-      // Flush any trailing event without a final separator.
-      const trailing = buffer.trim();
-      if (trailing) {
-        const evt = parseSseEvent(trailing);
-        if (evt) yield evt;
-      }
-      return;
-    }
-    // sse-starlette uses \r\n per spec; some intermediaries strip CRs.
-    // Normalise to \n then look for the blank-line separator.
-    buffer += decoder.decode(value, { stream: true }).replace(/\r\n/g, "\n");
-    let sepIdx;
-    while ((sepIdx = buffer.indexOf("\n\n")) !== -1) {
-      const raw = buffer.slice(0, sepIdx);
-      buffer = buffer.slice(sepIdx + 2);
-      const evt = parseSseEvent(raw);
-      if (evt) yield evt;
-    }
-  }
-}
-
-function parseSseEvent(raw) {
-  let event = "message";
-  const dataLines = [];
-  for (const line of raw.split("\n")) {
-    if (line.startsWith(":")) continue; // SSE comment / keep-alive ping
-    if (line.startsWith("event:")) event = line.slice(6).trim();
-    else if (line.startsWith("data:")) dataLines.push(line.slice(5).trim());
-  }
-  const dataRaw = dataLines.join("\n");
-  if (!dataRaw && event === "message") return null;
-  let data;
-  try { data = dataRaw ? JSON.parse(dataRaw) : null; } catch { data = dataRaw; }
-  return { event, data };
 }
 
 function pathToModule(path) {

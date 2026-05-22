@@ -60,6 +60,15 @@ RESULT_FIELDS: dict[AgentName, str] = {
 
 
 async def _planner_node(state: GraphState) -> dict[str, Any]:
+    # /orb/run-agent pre-populates planner_decision to invoke a specific
+    # agent directly. In that case we skip the LLM call but still emit the
+    # same event sequence so the frontend trace renders identically.
+    if state.planner_decision is not None:
+        await emit("node_start", {"name": "planner"})
+        await emit("planner_decision", state.planner_decision.model_dump())
+        await emit("node_end", {"name": "planner", "result": state.planner_decision.model_dump()})
+        return {}
+
     await emit("node_start", {"name": "planner"})
     try:
         decision = await asyncio.wait_for(plan(state), timeout=PER_NODE_TIMEOUT_SECONDS)
