@@ -14,16 +14,22 @@ export default function SidebarNav({ routes }) {
       gap: 4,
     }}>
       <div style={{ padding: "0 8px 18px", display: "flex", alignItems: "center", gap: 10 }}>
-        <div style={{
-          width: 28, height: 28, borderRadius: 8,
-          background: `linear-gradient(135deg, ${t.accent} 0%, ${t.accent2} 100%)`,
-        }}/>
-        <div style={{ display: "flex", flexDirection: "column", lineHeight: 1.1 }}>
-          <span style={{ fontWeight: 700, fontSize: 15, color: t.text, letterSpacing: "-0.01em" }}>
-            ai-powered-app
+        <img
+          src="/reapit-logo.svg"
+          alt="Reapit"
+          style={{
+            height: 22,
+            width: "auto",
+            // The brand logo is already slate; invert for dark mode only.
+            filter: isDark ? "brightness(0) invert(1)" : "none",
+          }}
+        />
+        <div style={{ display: "flex", flexDirection: "column", lineHeight: 1.1, marginLeft: 2 }}>
+          <span style={{ fontSize: 10, color: t.textMuted, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase" }}>
+            AI Platform
           </span>
-          <span style={{ fontSize: 11, color: t.textMuted, fontWeight: 500, letterSpacing: "0.04em", textTransform: "uppercase" }}>
-            Reapit demo
+          <span style={{ fontSize: 11, color: t.accent2, fontWeight: 600, letterSpacing: "0.04em" }}>
+            demo
           </span>
         </div>
       </div>
