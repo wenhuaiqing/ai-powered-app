@@ -1,5 +1,7 @@
+import { useEffect, useState } from "react";
 import { Brain, MessageSquare, Sparkles } from "lucide-react";
 import { useTheme } from "../../context/ThemeContext.jsx";
+import { api, fmtAud, fmtInt } from "../../lib/api.js";
 
 const AGENTS = [
   { name: "Compliance",   blurb: "NSW Fair Trading, Residential Tenancies, stamp duty, FIRB, strata. RAG over a curated corpus + Tavily web fallback." },
@@ -20,6 +22,16 @@ const SAMPLES = [
 
 export default function Dashboard() {
   const { t } = useTheme();
+  const [kpis, setKpis] = useState(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    api("/api/dashboard/kpis")
+      .then((d) => { if (!cancelled) setKpis(d); })
+      .catch(() => { /* dashboard is best-effort; ignore */ });
+    return () => { cancelled = true; };
+  }, []);
+
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 22 }}>
       {/* Hero */}
@@ -46,6 +58,22 @@ export default function Dashboard() {
           co-pilot bottom-right.
         </p>
       </div>
+
+      {/* KPIs */}
+      {kpis && (
+        <section style={{
+          display: "grid",
+          gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))",
+          gap: 10,
+        }}>
+          <KpiCard t={t} label="Active listings"  value={fmtInt(kpis.total_listings)}    sub={`${kpis.for_sale} for sale · ${kpis.for_lease} for lease`} />
+          <KpiCard t={t} label="Under offer"      value={fmtInt(kpis.under_offer)} />
+          <KpiCard t={t} label="Leads"            value={fmtInt(kpis.leads)}             sub={`${kpis.hot_leads} hot`} />
+          <KpiCard t={t} label="Avg DOM"          value={`${kpis.avg_days_on_market} d`} />
+          <KpiCard t={t} label="Suburbs covered"  value={fmtInt(kpis.suburbs_covered)} />
+          <KpiCard t={t} label="Median sale"      value={fmtAud(kpis.median_sale_price, { short: true })} />
+        </section>
+      )}
 
       {/* Agents grid */}
       <section>
@@ -104,6 +132,26 @@ function SectionHeader({ title, t, icon: Icon }) {
       <h2 style={{ margin: 0, fontSize: 15, fontWeight: 600, color: t.text, letterSpacing: "-0.005em" }}>
         {title}
       </h2>
+    </div>
+  );
+}
+
+function KpiCard({ t, label, value, sub }) {
+  return (
+    <div style={{
+      padding: "12px 14px",
+      background: t.surface,
+      border: `1px solid ${t.border}`,
+      borderRadius: 10,
+    }}>
+      <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.06em",
+                    textTransform: "uppercase", color: t.textMuted, marginBottom: 4 }}>
+        {label}
+      </div>
+      <div style={{ fontSize: 20, fontWeight: 700, color: t.text, letterSpacing: "-0.01em" }}>
+        {value}
+      </div>
+      {sub && <div style={{ fontSize: 11, color: t.textMuted, marginTop: 3 }}>{sub}</div>}
     </div>
   );
 }

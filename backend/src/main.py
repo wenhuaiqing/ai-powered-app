@@ -5,7 +5,15 @@ from __future__ import annotations
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from src.app.routers import orb
+from src.app.routers import (
+    compliance,
+    dashboard,
+    insights,
+    orb,
+    pipeline,
+    properties,
+    valuations,
+)
 from src.settings import settings
 
 app = FastAPI(
@@ -23,6 +31,12 @@ app.add_middleware(
 )
 
 app.include_router(orb.router)
+app.include_router(dashboard.router)
+app.include_router(properties.router)
+app.include_router(pipeline.router)
+app.include_router(valuations.router)
+app.include_router(compliance.router)
+app.include_router(insights.router)
 
 
 @app.get("/health")
