@@ -39,8 +39,12 @@ export default function UnifiedOrb() {
   const [open, setOpen] = useState(false);
   const [closing, setClosing] = useState(false);
   const [input, setInput] = useState("");
-  const [messages, setMessages] = useState([]);   // [{role:"user"|"answer", content|data}]
-  const [events, setEvents] = useState([]);       // current run's SSE events
+  // messages is the full conversation: alternating
+  //   {role:"user", content}
+  //   {role:"trace", events, durationMs?, running}
+  //   {role:"answer", data}
+  // Each user prompt produces all three. The trace stays in the history.
+  const [messages, setMessages] = useState([]);
   const [running, setRunning] = useState(false);
   const [error, setError] = useState(null);
   const scrollRef = useRef(null);
@@ -50,7 +54,7 @@ export default function UnifiedOrb() {
 
   useEffect(() => {
     if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-  }, [events, messages, running]);
+  }, [messages, running]);
 
   const close = useCallback(() => {
     setClosing(true);
@@ -60,11 +64,31 @@ export default function UnifiedOrb() {
   const submit = useCallback(async (override) => {
     const text = (typeof override === "string" ? override : input).trim();
     if (!text || running) return;
+    const startTs = performance.now();
     setInput("");
     setError(null);
-    setEvents([]);
-    setMessages((prev) => [...prev, { role: "user", content: text }]);
+    // Push user + an empty trace placeholder for this turn.
+    setMessages((prev) => [
+      ...prev,
+      { role: "user", content: text },
+      { role: "trace", events: [], running: true, durationMs: null },
+    ]);
     setRunning(true);
+
+    // Mutate ONLY the last trace message as new events stream in.
+    const pushEvent = (evt) => {
+      setMessages((prev) => {
+        const next = prev.slice();
+        // Find the last trace message — it's always the tail trace.
+        for (let i = next.length - 1; i >= 0; i--) {
+          if (next[i].role === "trace") {
+            next[i] = { ...next[i], events: appendEventToList(next[i].events, evt) };
+            break;
+          }
+        }
+        return next;
+      });
+    };
 
     const pageContext = {
       module: pathToModule(location.pathname),
@@ -90,13 +114,24 @@ export default function UnifiedOrb() {
         if (evt.event === "final_message") {
           setMessages((prev) => [...prev, { role: "answer", data: evt.data }]);
         }
-        appendEvent(setEvents, evt);
+        pushEvent(evt);
       }
     } catch (e) {
       if (e?.name !== "AbortError") {
         setError(String(e?.message || e));
       }
     } finally {
+      const durationMs = performance.now() - startTs;
+      setMessages((prev) => {
+        const next = prev.slice();
+        for (let i = next.length - 1; i >= 0; i--) {
+          if (next[i].role === "trace") {
+            next[i] = { ...next[i], running: false, durationMs };
+            break;
+          }
+        }
+        return next;
+      });
       setRunning(false);
       abortRef.current = null;
     }
@@ -172,10 +207,6 @@ export default function UnifiedOrb() {
             {messages.map((m, i) => (
               <MessageRow key={i} message={m} t={t} />
             ))}
-            {running && <AgentTrace events={events} running />}
-            {!running && events.length > 0 && messages.at(-1)?.role !== "answer" && (
-              <AgentTrace events={events} running={false} />
-            )}
             {error && (
               <div style={{
                 padding: "8px 10px", fontSize: 12,
@@ -270,7 +301,7 @@ export default function UnifiedOrb() {
 function MessageRow({ message, t }) {
   if (message.role === "user") {
     return (
-      <div style={{ alignSelf: "flex-end", maxWidth: "85%" }}>
+      <div style={{ alignSelf: "flex-end", maxWidth: "85%", flexShrink: 0 }}>
         <div style={{
           background: t.accentGlow,
           color: t.text,
@@ -286,8 +317,74 @@ function MessageRow({ message, t }) {
       </div>
     );
   }
+  if (message.role === "trace") {
+    return <TraceBlock trace={message} t={t} />;
+  }
+  return <AnswerCard data={message.data} t={t} />;
+}
+
+function TraceBlock({ trace, t }) {
+  const [open, setOpen] = useState(true);
+  const events = trace.events || [];
+  const planner = events.find((e) => e.event === "planner_decision");
+  const agentCount = planner?.data?.agents_to_call?.length ?? 0;
+  const seconds = trace.durationMs != null ? (trace.durationMs / 1000).toFixed(1) : null;
+
   return (
-    <AnswerCard data={message.data} t={t} />
+    <div style={{
+      border: `1px solid ${t.border}`,
+      borderRadius: 10,
+      background: t.surface,
+      overflow: "hidden",
+      flexShrink: 0,
+    }}>
+      <button
+        onClick={() => setOpen(o => !o)}
+        style={{
+          width: "100%",
+          display: "flex",
+          alignItems: "center",
+          gap: 8,
+          padding: "8px 12px",
+          background: "transparent",
+          border: "none",
+          cursor: "pointer",
+          color: t.textMuted,
+          fontFamily: "inherit",
+          fontSize: 12,
+          textAlign: "left",
+        }}
+      >
+        <span style={{
+          display: "inline-block",
+          width: 0, height: 0,
+          borderLeft: `4px solid ${t.textMuted}`,
+          borderTop: "4px solid transparent",
+          borderBottom: "4px solid transparent",
+          transition: "transform .15s ease",
+          transform: open ? "rotate(90deg)" : "rotate(0deg)",
+        }} />
+        <span style={{ fontWeight: 600, color: t.text }}>Steps</span>
+        <span>·</span>
+        {agentCount > 0 ? (
+          <span>{agentCount} agent{agentCount === 1 ? "" : "s"}</span>
+        ) : (
+          <span>{trace.running ? "planning…" : "no agents"}</span>
+        )}
+        {seconds && <><span>·</span><span>{seconds}s</span></>}
+        {trace.running && agentCount > 0 && (
+          <>
+            <span>·</span>
+            <span style={{ color: t.accent }}>working…</span>
+          </>
+        )}
+      </button>
+      {open && (
+        <div style={{ padding: "0 12px 10px" }}>
+          <AgentTrace events={events} running={trace.running} />
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -298,6 +395,7 @@ function AnswerCard({ data, t }) {
       border: `1px solid ${t.borderBright}`,
       borderRadius: 12,
       padding: "12px 14px",
+      flexShrink: 0,
     }}>
       <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.06em",
                     textTransform: "uppercase", color: t.accent, marginBottom: 6 }}>
@@ -367,24 +465,24 @@ function iconBtn(t) {
   };
 }
 
-function appendEvent(setEvents, evt) {
+function appendEventToList(list, evt) {
   // Merge tool_result into the most recent matching tool_call so the trace
   // shows one card per tool call with the result preview attached.
   if (evt.event === "tool_result") {
-    setEvents((prev) => {
-      for (let i = prev.length - 1; i >= 0; i--) {
-        const p = prev[i];
-        if (p.event === "tool_call" && p.data?.node === evt.data?.node && p.data?.tool === evt.data?.tool && !p.toolResultPreview) {
-          const next = prev.slice();
-          next[i] = { ...p, toolResultPreview: evt.data.preview };
-          return next;
-        }
+    for (let i = list.length - 1; i >= 0; i--) {
+      const p = list[i];
+      if (p.event === "tool_call"
+          && p.data?.node === evt.data?.node
+          && p.data?.tool === evt.data?.tool
+          && !p.toolResultPreview) {
+        const next = list.slice();
+        next[i] = { ...p, toolResultPreview: evt.data.preview };
+        return next;
       }
-      return [...prev, evt]; // no matching tool_call seen — keep it raw
-    });
-    return;
+    }
+    return [...list, evt]; // no matching tool_call seen — keep it raw
   }
-  setEvents((prev) => [...prev, evt]);
+  return [...list, evt];
 }
 
 async function* readSseStream(stream, signal) {
