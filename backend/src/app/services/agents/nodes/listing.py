@@ -1,21 +1,106 @@
-"""Listing Drafter — Day 1 stub. Day 2 makes a real LLM call with structured output."""
+"""Listing Drafter — generates listing copy from property attributes.
+
+Pure LLM, no tools. Uses OpenAI structured outputs to return a ListingDraft
+directly. Inputs come from the planner (extracted from prompt) or from a
+Properties drawer button that passes the property in page_context.
+"""
 
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 from src.app.services.agents.runtime import emit
 from src.app.services.agents.schemas import GraphState, ListingDraft
+from src.app.services.ai_client import chat_model, get_openai_client
+from src.settings import settings
+
+log = logging.getLogger(__name__)
+
+SYSTEM_PROMPT = """\
+You are a senior NSW real estate copywriter. Draft a listing description for
+the supplied property attributes.
+
+Rules:
+- Australian English, no emojis.
+- Headline ≤ 90 characters, evocative but not breathless.
+- Body markdown: 2-3 short paragraphs (~120 words total). Lead with the
+  strongest selling point.
+- key_features: 4-7 concise bullet items (e.g. "Renovated kitchen",
+  "5 minutes to ferry").
+- Do not invent facts. If a number isn't supplied (e.g. land size), avoid
+  citing it. Do not guarantee returns or yields.
+- suggested_price_range: only include if the inputs include enough to be
+  defensible (e.g. predicted_price or a comparable). Otherwise leave null.
+
+Return strict JSON matching the ListingDraft schema.
+"""
+
+
+def _resolve_inputs(state: GraphState, inputs: dict[str, Any]) -> dict[str, Any]:
+    out: dict[str, Any] = {}
+    if state.page_context.current_item:
+        out.update(state.page_context.current_item)
+    out.update(inputs or {})
+    return out
+
+
+def _fallback_draft(attrs: dict[str, Any]) -> ListingDraft:
+    suburb = attrs.get("suburb") or "this Sydney suburb"
+    bed = attrs.get("num_bed") or "well-proportioned"
+    bath = attrs.get("num_bath") or "modern"
+    type_ = (attrs.get("type") or "Home").title()
+    headline = f"Inviting {bed}-bedroom {type_.lower()} in {suburb}"
+    body = (
+        f"A comfortable {bed}-bedroom, {bath}-bathroom {type_.lower()} situated in "
+        f"sought-after {suburb}. Designed for easy family living, with light-filled "
+        "interiors and a layout that flows naturally between the kitchen, living and "
+        "outdoor spaces.\n\n"
+        "Close to local schools, shops, and transport. A solid opportunity for "
+        "owner-occupiers and investors alike."
+    )
+    return ListingDraft(
+        headline=headline,
+        body_markdown=body,
+        key_features=[
+            f"{bed} bedrooms" if isinstance(bed, int) else "Generous bedrooms",
+            f"{bath} bathrooms" if isinstance(bath, int) else "Updated bathrooms",
+            f"Located in {suburb}",
+            "Close to schools and transport",
+            "Comfortable, livable layout",
+        ],
+        suggested_price_range=None,
+    )
 
 
 async def run(state: GraphState, inputs: dict[str, Any]) -> ListingDraft:
-    await emit("node_start", {"name": "listing", "note": "[stub]"})
-    return ListingDraft(
-        headline="[stub] Modern family home in a sought-after pocket",
-        body_markdown=(
-            "[stub] Day 2 will generate listing copy from the property attributes "
-            f"in inputs={inputs!r}."
-        ),
-        key_features=["[stub]"],
-        suggested_price_range=None,
-    )
+    attrs = _resolve_inputs(state, inputs)
+    await emit("tool_call", {"node": "listing", "tool": "draft_copy", "args": attrs})
+
+    if not settings.azure_openai_api_key:
+        draft = _fallback_draft(attrs)
+        await emit("tool_result", {"node": "listing", "tool": "draft_copy",
+                                    "preview": "(no LLM) generic template draft"})
+        return draft
+
+    try:
+        client = get_openai_client()
+        completion = client.beta.chat.completions.parse(
+            model=chat_model(),
+            messages=[
+                {"role": "system", "content": SYSTEM_PROMPT},
+                {"role": "user", "content": f"Property attributes:\n{attrs}"},
+            ],
+            response_format=ListingDraft,
+            temperature=0.4,
+        )
+        parsed = completion.choices[0].message.parsed
+        if parsed is None:
+            raise ValueError("listing LLM returned no parsed payload")
+    except Exception as exc:  # noqa: BLE001
+        log.warning("listing LLM call failed (%s) — using fallback draft", exc)
+        parsed = _fallback_draft(attrs)
+
+    await emit("tool_result", {"node": "listing", "tool": "draft_copy",
+                                "preview": parsed.headline})
+    return parsed

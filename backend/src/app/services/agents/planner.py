@@ -8,6 +8,7 @@ endpoint stay testable without credentials).
 from __future__ import annotations
 
 import logging
+import re
 from typing import Any
 
 from src.app.services.ai_client import chat_model, get_openai_client
@@ -55,22 +56,35 @@ casual chit-chat with no clear intent, return an empty agents_to_call list.
 """
 
 
+# Keyword rules use word-boundary regex to avoid false positives
+# (e.g. "Bondi" must not match the "bond" compliance keyword).
 _KEYWORD_RULES: list[tuple[tuple[str, ...], AgentName]] = [
-    (("stamp duty", "tenanc", "bond", "fair trading", "firb", "strata", "underquot", "disclosure"), "compliance"),
-    (("market", "this week", "news", "trend", "recent", "right now", "current"), "market_watch"),
+    (("stamp duty", "tenancy", "tenant rights", "rental bond", "bonds", "fair trading",
+      "firb", "strata", "underquoting", "disclosure", "cooling off",
+      "regulation", "compliance", "legal"), "compliance"),
+    (("market this week", "this week", "news", "trend", "trends", "recently",
+      "recent changes", "right now", "current", "live market"), "market_watch"),
     (("draft listing", "write listing", "listing copy", "listing description"), "listing"),
-    (("triage", "intent score", "next action", "lead summary"), "lead_triage"),
-    (("match", "find me", "looking for", "buyer", "tenant", "suburbs under"), "matcher"),
-    (("estimate", "valuation", "value of", "worth", "predict price", "predicted"), "valuation"),
-    (("how many", "average", "median", "count", "top", "compare", "list"), "data_query"),
+    (("triage", "intent score", "next action", "lead summary", "triage this lead"), "lead_triage"),
+    (("match", "find me", "looking for", "buyer", "renter", "tenant",
+      "suburbs under", "ranked suburbs"), "matcher"),
+    (("estimate", "valuation", "value of", "what's it worth", "worth",
+      "predict price", "predicted price"), "valuation"),
+    (("how many", "average", "median", "count", "top", "compare",
+      "list", "show me", "breakdown"), "data_query"),
 ]
 
 
+def _matches(keyword: str, text: str) -> bool:
+    """Match a keyword as a whole word/phrase (case-insensitive)."""
+    pattern = r"\b" + re.escape(keyword) + r"\b"
+    return re.search(pattern, text, re.IGNORECASE) is not None
+
+
 def _heuristic_decision(message: str) -> PlannerDecision:
-    lower = message.lower()
     chosen: list[AgentName] = []
     for keywords, agent in _KEYWORD_RULES:
-        if any(kw in lower for kw in keywords) and agent not in chosen:
+        if any(_matches(kw, message) for kw in keywords) and agent not in chosen:
             chosen.append(agent)
     if not chosen:
         chosen = ["data_query"]  # safe default: try to answer from local data
