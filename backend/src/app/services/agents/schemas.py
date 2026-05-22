@@ -6,9 +6,10 @@ state object LangGraph threads through the graph.
 
 from __future__ import annotations
 
+import json
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 AgentName = Literal[
     "compliance",
@@ -35,12 +36,32 @@ class PageContext(BaseModel):
 # ---------------------------------------------------------------------------
 
 class AgentCall(BaseModel):
+    """One agent call decided by the planner.
+
+    `inputs_json` is the raw JSON string the LLM emits; Azure strict mode
+    forbids open-shape `dict[str, Any]` in nested response_format objects,
+    so we round-trip through a string and decode via the `inputs` property.
+    """
+    model_config = ConfigDict(extra="forbid")
+
     name: AgentName
-    inputs: dict[str, Any] = Field(default_factory=dict)
+    inputs_json: str = "{}"
     reasoning: str = ""
+
+    @property
+    def inputs(self) -> dict[str, Any]:
+        if not self.inputs_json:
+            return {}
+        try:
+            value = json.loads(self.inputs_json)
+        except json.JSONDecodeError:
+            return {}
+        return value if isinstance(value, dict) else {}
 
 
 class PlannerDecision(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     agents_to_call: list[AgentCall]
     reasoning: str
     needs_clarification: bool = False
@@ -51,6 +72,8 @@ class PlannerDecision(BaseModel):
 # ---------------------------------------------------------------------------
 
 class Citation(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     source: str
     url: str | None = None
     snippet: str
@@ -59,6 +82,8 @@ class Citation(BaseModel):
 
 
 class ComplianceResult(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     answer: str
     citations: list[Citation] = Field(default_factory=list)
     confidence: Literal["low", "medium", "high"] = "medium"
@@ -102,13 +127,19 @@ class MatcherResult(BaseModel):
 
 
 class ListingDraft(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     headline: str
     body_markdown: str
     key_features: list[str] = Field(default_factory=list)
-    suggested_price_range: tuple[float, float] | None = None
+    # Azure strict mode dislikes Optional tuple — use two floats instead.
+    suggested_price_min: float | None = None
+    suggested_price_max: float | None = None
 
 
 class LeadTriageResult(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     summary: str
     intent_score: Literal[1, 2, 3, 4, 5] = 3
     urgency: Literal["low", "medium", "high"] = "medium"

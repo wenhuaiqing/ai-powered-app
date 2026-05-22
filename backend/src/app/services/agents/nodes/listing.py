@@ -69,7 +69,6 @@ def _fallback_draft(attrs: dict[str, Any]) -> ListingDraft:
             "Close to schools and transport",
             "Comfortable, livable layout",
         ],
-        suggested_price_range=None,
     )
 
 
