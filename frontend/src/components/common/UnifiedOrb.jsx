@@ -1,5 +1,5 @@
 import { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react";
-import { useLocation } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import { RefreshCw, Send, X } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -81,6 +81,7 @@ const SAMPLE_PROMPTS = [
 export default function UnifiedOrb({ dockedHidden = false } = {}) {
   const { t, isDark } = useTheme();
   const location = useLocation();
+  const navigate = useNavigate();
   const orb = useOrb();
   const isMobile = useIsMobile();
   const isHome = location.pathname === "/";
@@ -247,6 +248,17 @@ export default function UnifiedOrb({ dockedHidden = false } = {}) {
     animation: closing ? "uo-fadeOut .18s ease forwards" : "uo-fadeIn .22s cubic-bezier(0.34,1.56,0.64,1) forwards",
   };
 
+  // Clicking the RAI logo in the header takes the user to "/" (Rai
+  // full-page on mobile, redirects to /dashboard on desktop) and
+  // dismisses any open panel / sheet so the homepage is actually
+  // visible afterwards.
+  const goHome = useCallback(() => {
+    setMobileExpanded(false);
+    setOpen(false);
+    setClosing(false);
+    if (location.pathname !== "/") navigate("/");
+  }, [navigate, location.pathname]);
+
   // ---- Reusable panel pieces ----------------------------------------------
   const renderHeader = (onClose) => (
     <div style={{
@@ -257,16 +269,32 @@ export default function UnifiedOrb({ dockedHidden = false } = {}) {
       gap: 10,
       flexShrink: 0,
     }}>
-      <img
-        src="/reapit-ai-logo.svg"
-        alt="Reapit AI"
+      <button
+        type="button"
+        onClick={goHome}
+        title="Go to Rai homepage"
+        aria-label="Go to Rai homepage"
         style={{
-          height: 30,
-          width: "auto",
-          filter: isDark ? "brightness(0) invert(1)" : "none",
+          display: "flex",
+          alignItems: "center",
+          padding: 0,
+          background: "transparent",
+          border: "none",
+          cursor: "pointer",
           flexShrink: 0,
         }}
-      />
+      >
+        <img
+          src="/reapit-ai-logo.svg"
+          alt="Reapit AI"
+          style={{
+            height: 30,
+            width: "auto",
+            filter: isDark ? "brightness(0) invert(1)" : "none",
+            display: "block",
+          }}
+        />
+      </button>
       <div style={{ flex: 1, fontSize: 12, color: t.textMuted, lineHeight: 1.35 }}>
         AppMarket co-pilot — ask anything.
       </div>
@@ -609,13 +637,19 @@ function DockedRaiBar({ t, isDark, onExpand, hidden }) {
 
 // Bottom sheet that slides up to 90% viewport height over the module page.
 // Backdrop dims + click-outside dismisses. Drag-to-close is Phase B polish.
+//
+// z-index reasoning: the shared <Drawer> uses 9990/9991 for its backdrop +
+// surface. The orb sheet must stack ABOVE the drawer so the agent buttons
+// inside Properties / Pipeline drawers (Estimate value, Triage lead, etc.)
+// open the orb visibly instead of behind the drawer. 10000 / 10001 places
+// us just above the drawer; the docked bar at z:90 sits well below.
 function MobileBottomSheet({ t, onClose, children }) {
   return (
     <>
       <div
         onClick={onClose}
         style={{
-          position: "fixed", inset: 0, zIndex: 110,
+          position: "fixed", inset: 0, zIndex: 10000,
           background: "rgba(15,18,38,0.42)",
           backdropFilter: "blur(2px)",
           animation: "uo-fadeIn .18s ease forwards",
@@ -624,7 +658,7 @@ function MobileBottomSheet({ t, onClose, children }) {
       <div style={{
         position: "fixed",
         left: 0, right: 0, bottom: 0,
-        zIndex: 111,
+        zIndex: 10001,
         height: "90dvh",
         background: t.surface,
         borderTopLeftRadius: 18,
