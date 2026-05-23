@@ -3,6 +3,7 @@
 from src.app.services.agents.nodes import (
     compliance,
     data_query,
+    general,
     listing,
     lead_triage,
     market_watch,
@@ -13,6 +14,7 @@ from src.app.services.agents.nodes import (
 __all__ = [
     "compliance",
     "data_query",
+    "general",
     "listing",
     "lead_triage",
     "market_watch",

@@ -18,6 +18,7 @@ from langgraph.graph import END, START, StateGraph
 from src.app.services.agents.nodes import (
     compliance,
     data_query,
+    general,
     lead_triage,
     listing,
     market_watch,
@@ -45,6 +46,7 @@ NODE_RUNNERS: dict[AgentName, Callable[[GraphState, dict[str, Any]], Awaitable[A
     "listing": listing.run,
     "lead_triage": lead_triage.run,
     "market_watch": market_watch.run,
+    "general": general.run,
 }
 
 # Map an agent name to the GraphState field that holds its result.
@@ -56,6 +58,7 @@ RESULT_FIELDS: dict[AgentName, str] = {
     "listing": "listing_draft",
     "lead_triage": "lead_triage_result",
     "market_watch": "market_watch_result",
+    "general": "general_result",
 }
 
 

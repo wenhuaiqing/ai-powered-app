@@ -1,0 +1,9 @@
+id: general-app-help
+description: Platform-meta question routes the catch-all General agent — no specialist fits "how does this work?".
+prompt: "How does this app work? What can you do for me?"
+expected_agents:
+  - general
+expected_facts:
+  - "module"
+anti_facts: []
+tier3: true
