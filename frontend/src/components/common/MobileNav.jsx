@@ -20,16 +20,51 @@ export default function MobileNav({ routes }) {
       // Notch / status bar inset on iOS Safari
       paddingTop: "calc(8px + env(safe-area-inset-top, 0px))",
     }}>
-      <NavLink to="/" style={{ display: "flex", alignItems: "center", padding: "4px 6px", marginRight: 4 }}>
-        <img
-          src="/reapit-ai-logo.svg"
-          alt="Reapit AI"
-          style={{
-            height: 22,
-            width: "auto",
-            filter: isDark ? "brightness(0) invert(1)" : "none",
-          }}
-        />
+      <NavLink
+        to="/"
+        end
+        title="Rai — AppMarket co-pilot"
+        aria-label="Rai home"
+        style={({ isActive }) => ({
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          height: 40,
+          padding: "0 6px",
+          marginRight: 2,
+          background: isActive ? t.accentGlow : "transparent",
+          borderRadius: 10,
+          position: "relative",
+          transition: "background .15s",
+        })}
+      >
+        {({ isActive }) => (
+          <>
+            <img
+              src="/reapit-ai-logo.svg"
+              alt="Reapit AI"
+              style={{
+                // Logo aspect ratio is ~2.08:1, so height 16 ≈ width 33,
+                // visually similar weight to the 20px module icons next to it.
+                height: 16,
+                width: "auto",
+                filter: isDark ? "brightness(0) invert(1)" : "none",
+              }}
+            />
+            {isActive && (
+              <span style={{
+                position: "absolute",
+                bottom: -6,
+                left: "50%",
+                transform: "translateX(-50%)",
+                width: 24,
+                height: 2,
+                background: t.accent,
+                borderRadius: 2,
+              }} />
+            )}
+          </>
+        )}
       </NavLink>
 
       <nav style={{ flex: 1, display: "flex", gap: 2, justifyContent: "space-around" }}>

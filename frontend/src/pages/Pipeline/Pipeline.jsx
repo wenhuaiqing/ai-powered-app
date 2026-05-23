@@ -7,6 +7,7 @@ import Drawer from "../../components/common/Drawer.jsx";
 import { useOrb } from "../../context/OrbContext.jsx";
 import { useTheme } from "../../context/ThemeContext.jsx";
 import { api, fmtAud, fmtDate } from "../../lib/api.js";
+import { useIsMobile } from "../../lib/useMediaQuery.js";
 
 const URGENCY_COLOR = (t, u) => ({
   high:   { fg: t.dot.red,    bg: t.dotGlow.red },
@@ -24,6 +25,7 @@ const INTENT_COLOR = (t, intent) => ({
 export default function Pipeline() {
   const { t } = useTheme();
   const orb = useOrb();
+  const isMobile = useIsMobile();
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -62,7 +64,9 @@ export default function Pipeline() {
         </div>
       )}
       {!loading && !error && (
-        <LeadTable items={items} t={t} onRowClick={(id) => setSelectedId(id)} />
+        isMobile
+          ? <LeadCardList items={items} t={t} onRowClick={(id) => setSelectedId(id)} />
+          : <LeadTable    items={items} t={t} onRowClick={(id) => setSelectedId(id)} />
       )}
 
       <Drawer
@@ -91,6 +95,95 @@ function Header({ t, count }) {
     </div>
   );
 }
+
+// Mobile card list — same data as the desktop table but stacked.
+function LeadCardList({ items, t, onRowClick }) {
+  if (items.length === 0) {
+    return (
+      <div style={{
+        padding: "16px 14px",
+        background: t.surface,
+        border: `1px solid ${t.border}`,
+        borderRadius: 12,
+        color: t.textMuted,
+        fontSize: 13,
+      }}>
+        No leads yet.
+      </div>
+    );
+  }
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+      {items.map((it) => {
+        const urg = URGENCY_COLOR(t, it.urgency);
+        const intentColor = INTENT_COLOR(t, it.intent);
+        return (
+          <button
+            key={it.lead_id}
+            onClick={() => onRowClick(it.lead_id)}
+            style={{
+              display: "flex",
+              flexDirection: "column",
+              gap: 8,
+              padding: "12px 14px",
+              background: t.surface,
+              border: `1px solid ${t.border}`,
+              borderRadius: 12,
+              cursor: "pointer",
+              textAlign: "left",
+              font: "inherit",
+              color: t.text,
+              transition: "border-color .15s",
+            }}
+            onMouseEnter={(e) => (e.currentTarget.style.borderColor = t.accent)}
+            onMouseLeave={(e) => (e.currentTarget.style.borderColor = t.border)}
+          >
+            {/* Name + urgency */}
+            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              <div style={{ flex: 1, minWidth: 0, lineHeight: 1.25 }}>
+                <div style={{ fontSize: 15, fontWeight: 600, color: t.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                  {it.name}
+                </div>
+                <div style={{ fontSize: 11, color: t.textMuted, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{it.email}</div>
+              </div>
+              <span style={{
+                fontSize: 10, fontWeight: 700, letterSpacing: "0.06em", textTransform: "uppercase",
+                padding: "2px 7px", borderRadius: 4, flexShrink: 0,
+                background: "transparent", color: urg.fg,
+                border: `1px solid ${urg.fg}`,
+              }}>{it.urgency}</span>
+            </div>
+
+            {/* Intent + preferred suburb */}
+            <div style={{ display: "flex", flexWrap: "wrap", gap: "4px 10px", fontSize: 12, color: t.textMuted }}>
+              <span style={{ color: intentColor, fontWeight: 600 }}>{it.intent}</span>
+              <span>{it.preferred_suburb}</span>
+              <span>≤{it.max_km_from_cbd} km CBD</span>
+              {it.min_bed != null && <span>{it.min_bed}+ bed</span>}
+            </div>
+
+            {/* Budget */}
+            <div style={{ fontSize: 13, color: t.text, fontWeight: 600 }}>
+              {fmtAud(it.budget_min, { short: true })} – {fmtAud(it.budget_max, { short: true })}
+            </div>
+
+            {/* Notes (truncated) */}
+            {it.notes && (
+              <div style={{
+                fontSize: 11, color: t.textMuted,
+                display: "-webkit-box",
+                WebkitLineClamp: 2, WebkitBoxOrient: "vertical",
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+              }}>{it.notes}</div>
+            )}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
 
 function LeadTable({ items, t, onRowClick }) {
   const last = items.length - 1;
