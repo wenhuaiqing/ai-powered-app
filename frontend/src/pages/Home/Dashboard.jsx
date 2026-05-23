@@ -8,13 +8,20 @@ import { useTheme } from "../../context/ThemeContext.jsx";
 import { api, fmtAud, fmtInt } from "../../lib/api.js";
 
 const AGENTS = [
-  { name: "Compliance",       icon: ScaleIcon,   blurb: "NSW Fair Trading, Residential Tenancies, stamp duty, FIRB, strata. RAG over a curated corpus + Tavily web fallback." },
-  { name: "Data Query",       icon: Database,    blurb: "Natural-language analytics over our DuckDB tables: properties, suburbs, listings, leads." },
-  { name: "Property Matcher", icon: Search,      blurb: "Composes Data Query + suburb reviews + ML valuation to rank candidate suburbs for a buyer brief." },
-  { name: "Valuation",        icon: Calculator,  blurb: "RandomForest price prediction (trained on 11k NSW sales) with per-feature contributions in AUD." },
-  { name: "Listing Drafter",  icon: FileText,    blurb: "Generates listing copy from a property's attributes (structured-output LLM)." },
-  { name: "Lead Triage",      icon: UserCheck,   blurb: "Summarises a CRM lead, scores intent 1-5, suggests next actions." },
-  { name: "Market Watch",     icon: Globe2,      blurb: "Live web search via Tavily for current property-market news and recent regulatory changes." },
+  { name: "Compliance",       icon: ScaleIcon,   blurb: "NSW Fair Trading, Residential Tenancies, stamp duty, FIRB, strata. RAG over a curated corpus + Tavily web fallback.",
+    sample: "What stamp duty applies to a $900k purchase in NSW?" },
+  { name: "Data Query",       icon: Database,    blurb: "Natural-language analytics over our DuckDB tables: properties, suburbs, listings, leads.",
+    sample: "Top 10 suburbs by median sale price" },
+  { name: "Property Matcher", icon: Search,      blurb: "Composes Data Query + suburb reviews + ML valuation to rank candidate suburbs for a buyer brief.",
+    sample: "Find me family-friendly 3-bed suburbs under $1.5M within 20km of CBD" },
+  { name: "Valuation",        icon: Calculator,  blurb: "RandomForest price prediction (trained on 11k NSW sales) with per-feature contributions in AUD.",
+    sample: "Estimate the value of a 4-bed house in Manly with 800sqm" },
+  { name: "Listing Drafter",  icon: FileText,    blurb: "Generates listing copy from a property's attributes (structured-output LLM).",
+    sample: "Draft a listing for a 3-bed 2-bath house in Bondi with 600sqm" },
+  { name: "Lead Triage",      icon: UserCheck,   blurb: "Summarises a CRM lead, scores intent 1-5, suggests next actions.",
+    sample: "Triage a sample CRM lead and suggest next actions" },
+  { name: "Market Watch",     icon: Globe2,      blurb: "Live web search via Tavily for current property-market news and recent regulatory changes.",
+    sample: "What's happening in the Sydney property market this week?" },
 ];
 
 const SAMPLES = [
@@ -25,7 +32,7 @@ const SAMPLES = [
 ];
 
 export default function Dashboard() {
-  const { t } = useTheme();
+  const { t, isDark } = useTheme();
   const orb = useOrb();
   const [kpis, setKpis] = useState(null);
 
@@ -88,7 +95,14 @@ export default function Dashboard() {
           gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))",
           gap: 12,
         }}>
-          {AGENTS.map((a) => <AgentCard key={a.name} agent={a} t={t} />)}
+          {AGENTS.map((a) => (
+            <AgentCard
+              key={a.name}
+              agent={a}
+              t={t}
+              onClick={() => orb.openWithPrompt(a.sample, { module: "dashboard" })}
+            />
+          ))}
         </div>
       </section>
 
@@ -104,15 +118,112 @@ export default function Dashboard() {
               onClick={() => orb.openWithPrompt(s, { module: "dashboard" })}
             />
           ))}
-          <div style={{ fontSize: 12, color: t.textMuted, marginTop: 4 }}>
-            Click any prompt to open <strong style={{ color: t.text }}>Rai</strong>, the
-            co-pilot, and watch the planner route the specialist agents.
-          </div>
+          <SweepLine t={t} isDark={isDark} onClick={() => orb.openPanel()} />
+          <style>{`
+            @keyframes rai-char-sweep {
+              0%, 12%, 30%, 100% {
+                color: ${t.textMuted};
+                text-shadow: none;
+              }
+              17%, 24% {
+                color: #D1263D;
+                /* Multi-direction zero-blur text-shadow simulates bold
+                   without changing font-weight, so per-char animation
+                   doesn't cause layout shift / line re-wrap. */
+                text-shadow:
+                  0.4px 0 0 currentColor,
+                  -0.4px 0 0 currentColor,
+                  0 0.4px 0 currentColor,
+                  0 -0.4px 0 currentColor;
+              }
+            }
+            /* Heartbeat pulse on the inline RAI logo — two quick zooms
+               (lub-dub) then a longer rest, looping forever. The brief
+               wobble signals "click me" without competing with the text
+               sweep. */
+            @keyframes rai-logo-heartbeat {
+              0%, 100%       { transform: scale(1); }
+              6%             { transform: scale(1.20); }
+              12%            { transform: scale(1); }
+              18%            { transform: scale(1.12); }
+              24%, 70%       { transform: scale(1); }
+            }
+          `}</style>
         </div>
       </section>
     </div>
   );
 }
+
+// Per-character animation: each letter cycles through the rai-char-sweep
+// keyframes with a small staggered animation-delay, so the brief red +
+// bold-look "highlight" travels left-to-right across the line. The inline
+// RAI logo sits between the two text halves and stays static.
+const HINT_BEFORE = "Click any prompt to open ";
+const HINT_AFTER  = ", the co-pilot, and watch the planner route the specialist agents.";
+const HINT_CHAR_DELAY_S = 0.04;
+const HINT_CYCLE_S = 5;
+
+function SweepLine({ t, isDark, onClick }) {
+  return (
+    <button
+      onClick={onClick}
+      aria-label="Open Rai, the co-pilot"
+      style={{
+        appearance: "none",
+        background: "transparent",
+        border: "none",
+        padding: "6px 8px",
+        marginLeft: -8,
+        marginTop: 4,
+        borderRadius: 8,
+        textAlign: "left",
+        font: "inherit",
+        fontSize: 12,
+        color: t.textMuted,
+        lineHeight: 1.6,
+        cursor: "pointer",
+        transition: "background .15s ease",
+      }}
+      onMouseEnter={(e) => (e.currentTarget.style.background = t.accentGlow)}
+      onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
+      onFocus={(e) => (e.currentTarget.style.background = t.accentGlow)}
+      onBlur={(e) => (e.currentTarget.style.background = "transparent")}
+    >
+      {HINT_BEFORE.split("").map((c, i) => (
+        <Char key={`b${i}`} ch={c} index={i} />
+      ))}
+      <img
+        src="/reapit-ai-logo.svg"
+        alt="Reapit AI"
+        style={{
+          height: 22,
+          width: "auto",
+          verticalAlign: "-6px",
+          margin: "0 4px",
+          filter: isDark ? "brightness(0) invert(1)" : "none",
+          pointerEvents: "none",
+          display: "inline-block",
+          transformOrigin: "center center",
+          animation: "rai-logo-heartbeat 3.6s ease-in-out infinite",
+        }}
+      />
+      {HINT_AFTER.split("").map((c, i) => (
+        <Char key={`a${i}`} ch={c} index={i + HINT_BEFORE.length + 1} />
+      ))}
+    </button>
+  );
+}
+
+function Char({ ch, index }) {
+  return (
+    <span style={{
+      animation: `rai-char-sweep ${HINT_CYCLE_S}s linear infinite`,
+      animationDelay: `${index * HINT_CHAR_DELAY_S}s`,
+    }}>{ch}</span>
+  );
+}
+
 
 function SamplePromptButton({ t, prompt, onClick }) {
   return (
@@ -196,24 +307,44 @@ function KpiCard({ t, label, value, sub }) {
   );
 }
 
-// Agent cards are "capabilities" — neutral surface, icon avatar, AI badge.
-// Hover lifts the border to accent so the card feels interactive even though
-// it doesn't navigate anywhere yet.
-function AgentCard({ agent, t }) {
+// Agent cards are "capabilities" — neutral surface, icon avatar, AI badge,
+// and clicking fires a sample prompt at Rai so the user can see the agent
+// in action. Hover lifts the border to indigo and reveals an arrow chip
+// to telegraph "try this".
+function AgentCard({ agent, t, onClick }) {
   const Icon = agent.icon || Brain;
   return (
-    <div
+    <button
+      onClick={onClick}
+      aria-label={`Try ${agent.name}: ${agent.sample}`}
+      title={`Try: "${agent.sample}"`}
       style={{
+        position: "relative",
         padding: "14px 16px",
         background: t.surface,
         border: `1px solid ${t.border}`,
         borderRadius: 10,
         display: "flex",
         gap: 12,
-        transition: "border-color .15s ease, transform .15s ease",
+        textAlign: "left",
+        font: "inherit",
+        cursor: "pointer",
+        transition: "border-color .15s ease, transform .15s ease, box-shadow .15s ease",
       }}
-      onMouseEnter={(e) => { e.currentTarget.style.borderColor = t.accent; e.currentTarget.style.transform = "translateY(-1px)"; }}
-      onMouseLeave={(e) => { e.currentTarget.style.borderColor = t.border; e.currentTarget.style.transform = "translateY(0)"; }}
+      onMouseEnter={(e) => {
+        e.currentTarget.style.borderColor = t.accent;
+        e.currentTarget.style.transform = "translateY(-1px)";
+        e.currentTarget.style.boxShadow = `0 6px 18px ${t.accentGlow}`;
+        const arrow = e.currentTarget.querySelector("[data-arrow]");
+        if (arrow) { arrow.style.opacity = 1; arrow.style.transform = "translateX(0)"; }
+      }}
+      onMouseLeave={(e) => {
+        e.currentTarget.style.borderColor = t.border;
+        e.currentTarget.style.transform = "translateY(0)";
+        e.currentTarget.style.boxShadow = "none";
+        const arrow = e.currentTarget.querySelector("[data-arrow]");
+        if (arrow) { arrow.style.opacity = 0; arrow.style.transform = "translateX(-4px)"; }
+      }}
     >
       <div style={{
         width: 36, height: 36, borderRadius: 9,
@@ -237,6 +368,18 @@ function AgentCard({ agent, t }) {
           {agent.blurb}
         </div>
       </div>
-    </div>
+      <ArrowUpRight
+        size={14}
+        data-arrow
+        style={{
+          position: "absolute",
+          top: 12, right: 12,
+          color: t.accent,
+          opacity: 0,
+          transform: "translateX(-4px)",
+          transition: "opacity .15s, transform .15s",
+        }}
+      />
+    </button>
   );
 }
