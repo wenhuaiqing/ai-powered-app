@@ -1,0 +1,14 @@
+id: compliance-stamp-duty
+description: Direct NSW stamp-duty question — routes Compliance only, must cite Revenue NSW with the exact bracketed figure.
+prompt: "What stamp duty applies to a $900k purchase in NSW?"
+expected_agents:
+  - compliance
+expected_facts:
+  - "Revenue NSW"
+  - "$35,029"
+  - "first home"
+  - "8%"
+anti_facts:
+  - "Victoria"
+  - "WA"
+tier3: true

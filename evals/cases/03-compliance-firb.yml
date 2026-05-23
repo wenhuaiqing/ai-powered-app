@@ -1,0 +1,12 @@
+id: compliance-firb
+description: FIRB question — routes Compliance, surfaces the temporary residents vs non-residents distinction + the 2025-2027 established-dwelling ban.
+prompt: "What are the FIRB rules for foreign buyers purchasing residential property in Australia?"
+expected_agents:
+  - compliance
+expected_facts:
+  - "FIRB"
+  - "temporary resident"
+  - "established"
+anti_facts:
+  - "no approval required"
+tier3: false

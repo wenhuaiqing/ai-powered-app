@@ -1,0 +1,11 @@
+id: listing-draft
+description: Listing Drafter writes property copy. Headline must mention the suburb.
+prompt: "Draft a listing description for a 3-bed 2-bath house in Bondi with 600 sqm of land."
+expected_agents:
+  - listing
+expected_facts:
+  - "Bondi"
+anti_facts:
+  - "guaranteed return"
+  - "as is"
+tier3: false

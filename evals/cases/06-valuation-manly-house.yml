@@ -1,0 +1,9 @@
+id: valuation-manly-house
+description: Specific property valuation routes Valuation only — RandomForest produces a price + 80% CI.
+prompt: "Estimate the value of a 4-bed 2-bath house in Manly with 800 sqm of land."
+expected_agents:
+  - valuation
+expected_facts:
+  - "Manly"
+anti_facts: []
+tier3: true

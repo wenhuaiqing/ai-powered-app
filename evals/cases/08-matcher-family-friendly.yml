@@ -1,0 +1,9 @@
+id: matcher-family-friendly
+description: Buyer-brief routes Property Matcher, which composes Data Query + Reviews RAG + Valuation.
+prompt: "Find me family-friendly 3-bed suburbs under $1.5M within 20 km of Sydney CBD."
+expected_agents:
+  - matcher
+expected_facts:
+  - "suburb"
+anti_facts: []
+tier3: true
