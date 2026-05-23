@@ -1,0 +1,33 @@
+services:
+  # MySQL 8.0 — OLTP source-of-truth for properties, leads, lead_events,
+  # agent_runs, listings. The pipeline (scripts/etl_mysql_to_duckdb.py)
+  # denormalises this into DuckDB for analytics + agent text-to-SQL.
+  mysql:
+    image: mysql:8.0
+    container_name: ai-powered-app-mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: rootpw
+      MYSQL_DATABASE: reapit_demo
+      MYSQL_USER: app
+      MYSQL_PASSWORD: app
+      MYSQL_CHARSET: utf8mb4
+      MYSQL_COLLATION: utf8mb4_unicode_ci
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+      - --default-authentication-plugin=mysql_native_password
+      - --local-infile=1
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql-data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-uapp", "-papp"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 10s
+
+volumes:
+  mysql-data:

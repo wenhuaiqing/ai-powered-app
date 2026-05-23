@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import {
-  ArrowUpRight, Brain, Calculator, Database, FileText, Globe2, MessageSquare,
-  ScaleIcon, Search, Sparkles, UserCheck,
+  Activity, ArrowUpRight, Brain, Calculator, Database, FileText, Globe2, Globe,
+  MessageSquare, ScaleIcon, Search, Sparkles, UserCheck,
 } from "lucide-react";
 import { useOrb } from "../../context/OrbContext.jsx";
 import { useTheme } from "../../context/ThemeContext.jsx";
@@ -114,6 +114,12 @@ export default function Dashboard() {
             />
           ))}
         </div>
+      </section>
+
+      {/* Recent agent activity — real rows from MySQL agent_runs */}
+      <section>
+        <SectionHeader title="Recent agent activity" t={t} icon={Activity} />
+        <RecentRuns t={t} />
       </section>
 
       {/* Sample prompts */}
@@ -353,6 +359,129 @@ function KpiCard({ t, label, value, sub }) {
     </div>
   );
 }
+
+// Real activity feed. Hits /api/dashboard/recent-runs (MySQL agent_runs)
+// every 20s — every Rai invocation lands in here within seconds.
+function RecentRuns({ t }) {
+  const [items, setItems] = useState(null);
+  useEffect(() => {
+    let cancelled = false;
+    const load = () => {
+      api("/api/dashboard/recent-runs?limit=6")
+        .then((d) => { if (!cancelled) setItems(d.items || []); })
+        .catch(() => { if (!cancelled) setItems([]); });
+    };
+    load();
+    const id = setInterval(load, 20_000);
+    return () => { cancelled = true; clearInterval(id); };
+  }, []);
+
+  if (items === null) {
+    return (
+      <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+        {Array.from({ length: 3 }).map((_, i) => (
+          <div key={i} style={{
+            height: 46,
+            background: t.accentGlow,
+            border: `1px solid ${t.border}`,
+            borderRadius: 8,
+            opacity: 0.5 - i * 0.08,
+          }} />
+        ))}
+      </div>
+    );
+  }
+  if (items.length === 0) {
+    return (
+      <div style={{
+        padding: "14px 16px",
+        background: t.surface,
+        border: `1px dashed ${t.border}`,
+        borderRadius: 10,
+        fontSize: 12,
+        color: t.textMuted,
+        lineHeight: 1.5,
+      }}>
+        No agent runs yet. Try a sample prompt above — every invocation lands
+        here within seconds (written to MySQL <code>agent_runs</code>).
+      </div>
+    );
+  }
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+      {items.map((r) => <RunRow key={r.run_id} t={t} run={r} />)}
+    </div>
+  );
+}
+
+function RunRow({ t, run }) {
+  const agents = Array.isArray(run.agents_called) ? run.agents_called : [];
+  const ago = relativeTime(run.created_at);
+  const dur = run.duration_ms ? `${Math.round(run.duration_ms / 100) / 10}s` : "—";
+  return (
+    <div style={{
+      display: "flex",
+      alignItems: "center",
+      gap: 10,
+      padding: "10px 14px",
+      background: t.surface,
+      border: `1px solid ${t.border}`,
+      borderRadius: 10,
+      fontSize: 12,
+    }}>
+      <Activity size={13} color={run.error_count > 0 ? t.dot.red : t.accent2} style={{ flexShrink: 0 }} />
+      <div style={{
+        flex: 1,
+        minWidth: 0,
+        overflow: "hidden",
+        textOverflow: "ellipsis",
+        whiteSpace: "nowrap",
+        color: t.text,
+      }}>
+        {run.user_message || "(empty prompt)"}
+      </div>
+      <div style={{ display: "flex", gap: 4, flexShrink: 0 }}>
+        {agents.slice(0, 3).map((a) => (
+          <span key={a} style={{
+            fontSize: 10, fontWeight: 600,
+            padding: "2px 6px", borderRadius: 4,
+            background: t.accent2Glow, color: t.accent2,
+          }}>{a}</span>
+        ))}
+        {agents.length > 3 && (
+          <span style={{ fontSize: 10, color: t.textMuted, alignSelf: "center" }}>
+            +{agents.length - 3}
+          </span>
+        )}
+      </div>
+      {run.used_web_search && (
+        <Globe size={11} color={t.accent} style={{ flexShrink: 0 }} title="Used web search" />
+      )}
+      <span style={{ fontSize: 10, color: t.textMuted, flexShrink: 0, fontVariantNumeric: "tabular-nums" }}>
+        {dur}
+      </span>
+      <span style={{ fontSize: 10, color: t.textMuted, flexShrink: 0 }}>
+        {ago}
+      </span>
+    </div>
+  );
+}
+
+function relativeTime(iso) {
+  if (!iso) return "";
+  const ts = new Date(iso).getTime();
+  if (Number.isNaN(ts)) return "";
+  const diff = Math.max(0, Date.now() - ts);
+  const s = Math.round(diff / 1000);
+  if (s < 60)        return `${s}s ago`;
+  const m = Math.round(s / 60);
+  if (m < 60)        return `${m}m ago`;
+  const h = Math.round(m / 60);
+  if (h < 24)        return `${h}h ago`;
+  const d = Math.round(h / 24);
+  return `${d}d ago`;
+}
+
 
 // Agent cards are "capabilities" — neutral surface, icon avatar, AI badge,
 // and clicking fires a sample prompt at Rai so the user can see the agent

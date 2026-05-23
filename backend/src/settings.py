@@ -31,6 +31,21 @@ class Settings(BaseSettings):
     model_path: Path = REPO_ROOT / "data" / "model.pkl"
     duckdb_path: Path = REPO_ROOT / "data" / "platform.duckdb"
 
+    # MySQL (OLTP). Defaults match docker-compose.yml.
+    mysql_host: str = "127.0.0.1"
+    mysql_port: int = 3306
+    mysql_user: str = "app"
+    mysql_password: str = "app"
+    mysql_database: str = "reapit_demo"
+
+    @property
+    def mysql_url(self) -> str:
+        return (
+            f"mysql+pymysql://{self.mysql_user}:{self.mysql_password}"
+            f"@{self.mysql_host}:{self.mysql_port}/{self.mysql_database}"
+            "?charset=utf8mb4"
+        )
+
     # CORS
     cors_origins: str = "http://localhost:5173"
 
