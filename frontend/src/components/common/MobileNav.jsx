@@ -1,11 +1,18 @@
 // Top icon strip for the mobile shell. Six module icons in a row, active
 // route gets an indigo tint + 2px under-rule. The Reapit AI logo sits to
 // the left as the brand mark; tapping it routes home.
+import { Monitor } from "lucide-react";
 import { NavLink } from "react-router-dom";
 import { useTheme } from "../../context/ThemeContext.jsx";
+import { useViewport } from "../../context/ViewportContext.jsx";
 
 export default function MobileNav({ routes }) {
   const { t, isDark } = useTheme();
+  const viewport = useViewport();
+  // Only offer "Desktop view" when the user is on a wide screen but has
+  // forced mobile. On a real phone the desktop layout would be unusable,
+  // so we hide the toggle there.
+  const canShowDesktopToggle = viewport?.override === "mobile" && !viewport.autoMatch;
   return (
     <header style={{
       position: "sticky",
@@ -67,7 +74,7 @@ export default function MobileNav({ routes }) {
         )}
       </NavLink>
 
-      <nav style={{ flex: 1, display: "flex", gap: 2, justifyContent: "space-around" }}>
+      <nav style={{ flex: 1, display: "flex", gap: 2, justifyContent: canShowDesktopToggle ? "flex-start" : "space-around" }}>
         {routes.map((r) => {
           const Icon = r.icon;
           if (!Icon) return null;
@@ -112,6 +119,42 @@ export default function MobileNav({ routes }) {
           );
         })}
       </nav>
+
+      {canShowDesktopToggle && (
+        <button
+          onClick={() => viewport.setOverride(null)}
+          title="Switch back to desktop view"
+          aria-label="Switch back to desktop view"
+          style={{
+            display: "flex", alignItems: "center", gap: 5,
+            padding: "5px 9px",
+            background: t.surface,
+            border: `1px solid ${t.border}`,
+            borderRadius: 999,
+            color: t.textMuted,
+            fontSize: 11,
+            fontWeight: 600,
+            fontFamily: "inherit",
+            cursor: "pointer",
+            marginLeft: 6,
+            flexShrink: 0,
+            transition: "border-color .15s, color .15s, background .15s",
+          }}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.borderColor = t.accent;
+            e.currentTarget.style.color = t.accent;
+            e.currentTarget.style.background = t.accentGlow;
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.borderColor = t.border;
+            e.currentTarget.style.color = t.textMuted;
+            e.currentTarget.style.background = t.surface;
+          }}
+        >
+          <Monitor size={13} strokeWidth={2} />
+          Desktop
+        </button>
+      )}
     </header>
   );
 }
