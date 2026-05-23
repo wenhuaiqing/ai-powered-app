@@ -72,20 +72,24 @@ export default function Dashboard() {
       </div>
 
       {/* KPIs */}
-      {kpis && (
-        <section style={{
-          display: "grid",
-          gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))",
-          gap: 10,
-        }}>
-          <KpiCard t={t} label="Active listings"  value={fmtInt(kpis.total_listings)}    sub={`${kpis.for_sale} for sale · ${kpis.for_lease} for lease`} />
-          <KpiCard t={t} label="Under offer"      value={fmtInt(kpis.under_offer)} />
-          <KpiCard t={t} label="Leads"            value={fmtInt(kpis.leads)}             sub={`${kpis.hot_leads} hot`} />
-          <KpiCard t={t} label="Avg DOM"          value={`${kpis.avg_days_on_market} d`} />
-          <KpiCard t={t} label="Suburbs covered"  value={fmtInt(kpis.suburbs_covered)} />
-          <KpiCard t={t} label="Median sale"      value={fmtAud(kpis.median_sale_price, { short: true })} />
-        </section>
-      )}
+      <section style={{
+        display: "grid",
+        gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))",
+        gap: 10,
+      }}>
+        {kpis ? (
+          <>
+            <KpiCard t={t} label="Active listings"  value={fmtInt(kpis.total_listings)}    sub={`${kpis.for_sale} for sale · ${kpis.for_lease} for lease`} />
+            <KpiCard t={t} label="Under offer"      value={fmtInt(kpis.under_offer)} />
+            <KpiCard t={t} label="Leads"            value={fmtInt(kpis.leads)}             sub={`${kpis.hot_leads} hot`} />
+            <KpiCard t={t} label="Avg DOM"          value={`${kpis.avg_days_on_market} d`} />
+            <KpiCard t={t} label="Suburbs covered"  value={fmtInt(kpis.suburbs_covered)} />
+            <KpiCard t={t} label="Median sale"      value={fmtAud(kpis.median_sale_price, { short: true })} />
+          </>
+        ) : (
+          Array.from({ length: 6 }).map((_, i) => <KpiSkeleton key={i} t={t} index={i} />)
+        )}
+      </section>
 
       {/* Agents grid */}
       <section>
@@ -224,6 +228,43 @@ function Char({ ch, index }) {
   );
 }
 
+
+// Ghost KPI card shown while /api/dashboard/kpis is in flight. Mirrors
+// the KpiCard frame (indigo-tint, 3px left rule, same padding) so the
+// transition to real data doesn't shift the layout.
+function KpiSkeleton({ t, index = 0 }) {
+  return (
+    <div style={{
+      position: "relative",
+      padding: "14px 14px 14px 18px",
+      background: t.accentGlow,
+      border: `1px solid ${t.border}`,
+      borderRadius: 10,
+      overflow: "hidden",
+      opacity: 0.55 - index * 0.04,
+    }}>
+      <div style={{
+        position: "absolute",
+        left: 0, top: 0, bottom: 0,
+        width: 3,
+        background: t.accent,
+        opacity: 0.5,
+      }} />
+      <div style={{
+        height: 8, width: "60%",
+        background: t.borderBright,
+        borderRadius: 4,
+        marginBottom: 10,
+        opacity: 0.6,
+      }} />
+      <div style={{
+        height: 18, width: "45%",
+        background: t.borderBright,
+        borderRadius: 4,
+      }} />
+    </div>
+  );
+}
 
 function SamplePromptButton({ t, prompt, onClick }) {
   return (
