@@ -7,6 +7,7 @@ import AgentTrace from "../agents/AgentTrace.jsx";
 import { useOrb } from "../../context/OrbContext.jsx";
 import { useTheme } from "../../context/ThemeContext.jsx";
 import { appendEventToList, streamAgent } from "../../lib/orbStream.js";
+import { useIsMobile } from "../../lib/useMediaQuery.js";
 
 const PlasmaOrb = lazy(() => import("./PlasmaOrb.jsx"));
 
@@ -36,11 +37,14 @@ const SAMPLE_PROMPTS = [
 ];
 
 
-export default function UnifiedOrb() {
+export default function UnifiedOrb({ dockedHidden = false } = {}) {
   const { t, isDark } = useTheme();
   const location = useLocation();
   const orb = useOrb();
-  const [open, setOpen] = useState(false);
+  const isMobile = useIsMobile();
+  const isHome = location.pathname === "/";
+  const [open, setOpen] = useState(false);            // desktop: floating panel visible
+  const [mobileExpanded, setMobileExpanded] = useState(false);  // mobile non-home: bottom sheet visible
   const [closing, setClosing] = useState(false);
   const [input, setInput] = useState("");
   // messages is the full conversation: alternating
@@ -136,7 +140,10 @@ export default function UnifiedOrb() {
     if (!orb?.pending) return;
     const p = orb.pending;
     orb.consume();
-    setOpen(true);
+    // Desktop = floating panel; mobile non-home = bottom sheet; mobile
+    // home = already full-page so no panel state to flip.
+    if (!isMobile) setOpen(true);
+    else if (!isHome) setMobileExpanded(true);
     if (p.mode === "open") {
       // Just open the panel; user will type a question themselves.
       return;
@@ -154,7 +161,7 @@ export default function UnifiedOrb() {
         page_context: ctx,
       });
     }
-  }, [orb?.pending, orb, runStream, location.pathname]);
+  }, [orb?.pending, orb, runStream, location.pathname, isMobile, isHome]);
 
   // Stop any in-flight stream if the orb closes.
   useEffect(() => {
@@ -184,113 +191,165 @@ export default function UnifiedOrb() {
     animation: closing ? "uo-fadeOut .18s ease forwards" : "uo-fadeIn .22s cubic-bezier(0.34,1.56,0.64,1) forwards",
   };
 
+  // ---- Reusable panel pieces ----------------------------------------------
+  const renderHeader = (onClose) => (
+    <div style={{
+      padding: "12px 14px 10px",
+      borderBottom: `1px solid ${t.border}`,
+      display: "flex",
+      alignItems: "center",
+      gap: 10,
+      flexShrink: 0,
+    }}>
+      <img
+        src="/reapit-ai-logo.svg"
+        alt="Reapit AI"
+        style={{
+          height: 30,
+          width: "auto",
+          filter: isDark ? "brightness(0) invert(1)" : "none",
+          flexShrink: 0,
+        }}
+      />
+      <div style={{ flex: 1, fontSize: 12, color: t.textMuted, lineHeight: 1.35 }}>
+        AppMarket co-pilot — ask anything.
+      </div>
+      {onClose && (
+        <button onClick={onClose} style={iconBtn(t)} title="Close" aria-label="Close">
+          <X size={16} />
+        </button>
+      )}
+    </div>
+  );
+
+  const renderBody = () => (
+    <div ref={scrollRef} style={{
+      flex: 1,
+      overflowY: "auto",
+      padding: "12px 14px",
+      display: "flex",
+      flexDirection: "column",
+      gap: 10,
+      minHeight: 0,
+    }}>
+      {messages.length === 0 && !running && (
+        <SamplePrompts onPick={(p) => submit(p)} t={t} />
+      )}
+      {messages.map((m, i) => (
+        <MessageRow key={i} message={m} t={t} />
+      ))}
+      {error && (
+        <div style={{
+          padding: "8px 10px", fontSize: 12,
+          background: t.dotGlow.red, color: t.dot.red,
+          border: `1px solid ${t.dot.red}`, borderRadius: 8,
+        }}>{error}</div>
+      )}
+    </div>
+  );
+
+  const renderInput = ({ autoFocus = true } = {}) => (
+    <div style={{
+      padding: "10px 12px",
+      borderTop: `1px solid ${t.border}`,
+      display: "flex",
+      gap: 8,
+      background: t.surface,
+      flexShrink: 0,
+    }}>
+      <input
+        autoFocus={autoFocus}
+        type="text"
+        value={input}
+        onChange={(e) => setInput(e.target.value)}
+        onKeyDown={(e) => e.key === "Enter" && submit()}
+        placeholder="Ask about properties, regulations, or the market..."
+        disabled={running}
+        style={{
+          flex: 1,
+          padding: "9px 12px",
+          background: isDark ? "rgba(0,0,0,0.25)" : "rgba(0,0,0,0.03)",
+          border: `1px solid ${t.border}`,
+          borderRadius: 10,
+          color: t.text,
+          fontSize: 13,
+          fontFamily: "inherit",
+          outline: "none",
+        }}
+        onFocus={(e) => (e.target.style.borderColor = t.accent)}
+        onBlur={(e) => (e.target.style.borderColor = t.border)}
+      />
+      <button
+        onClick={submit}
+        disabled={running || !input.trim()}
+        style={{
+          padding: "9px 14px",
+          background: !input.trim() || running ? t.accentGlow : t.accent,
+          color: !input.trim() || running ? t.textMuted : "#fff",
+          border: "none",
+          borderRadius: 10,
+          fontSize: 13,
+          fontWeight: 600,
+          fontFamily: "inherit",
+          cursor: !input.trim() || running ? "not-allowed" : "pointer",
+          display: "flex",
+          alignItems: "center",
+          gap: 6,
+          transition: "all .15s ease",
+        }}
+      >
+        <Send size={13} />
+        {running ? "..." : "Send"}
+      </button>
+    </div>
+  );
+
+  // ---- Mode branches -------------------------------------------------------
+
+  // Mobile + home: Rai fills the body below MobileNav. No docked bar, no
+  // sheet. The parent <main> already constrains the height.
+  if (isMobile && isHome) {
+    return (
+      <div style={{ display: "flex", flexDirection: "column", height: "100%", background: t.surface }}>
+        {renderHeader(null)}
+        {renderBody()}
+        {renderInput({ autoFocus: false })}
+      </div>
+    );
+  }
+
+  // Mobile + non-home: docked input bar at the bottom; optional bottom sheet.
+  if (isMobile) {
+    return (
+      <>
+        <DockedRaiBar
+          t={t}
+          isDark={isDark}
+          hidden={dockedHidden}
+          onExpand={() => setMobileExpanded(true)}
+        />
+        {mobileExpanded && (
+          <MobileBottomSheet
+            t={t}
+            onClose={() => setMobileExpanded(false)}
+          >
+            {renderHeader(() => setMobileExpanded(false))}
+            {renderBody()}
+            {renderInput({ autoFocus: true })}
+          </MobileBottomSheet>
+        )}
+      </>
+    );
+  }
+
+  // Desktop (default): floating panel + the PlasmaOrb visual.
   return (
     <div style={{ position: "fixed", bottom: 16, right: 16, zIndex: 9999, fontFamily: "'Inter', system-ui, sans-serif" }}>
       {open && (
         <div style={panelStyle}>
-          {/* Header */}
-          <div style={{
-            padding: "12px 14px 10px",
-            borderBottom: `1px solid ${t.border}`,
-            display: "flex",
-            alignItems: "center",
-            gap: 10,
-          }}>
-            <img
-              src="/reapit-ai-logo.svg"
-              alt="Reapit AI"
-              style={{
-                height: 30,
-                width: "auto",
-                filter: isDark ? "brightness(0) invert(1)" : "none",
-                flexShrink: 0,
-              }}
-            />
-            <div style={{ flex: 1, fontSize: 12, color: t.textMuted, lineHeight: 1.35 }}>
-              AppMarket co-pilot — ask anything.
-            </div>
-            <button onClick={close} style={iconBtn(t)} title="Close">
-              <X size={16} />
-            </button>
-          </div>
-
-          {/* Body */}
-          <div ref={scrollRef} style={{
-            flex: 1,
-            overflowY: "auto",
-            padding: "12px 14px",
-            display: "flex",
-            flexDirection: "column",
-            gap: 10,
-          }}>
-            {messages.length === 0 && !running && (
-              <SamplePrompts onPick={(p) => submit(p)} t={t} />
-            )}
-            {messages.map((m, i) => (
-              <MessageRow key={i} message={m} t={t} />
-            ))}
-            {error && (
-              <div style={{
-                padding: "8px 10px", fontSize: 12,
-                background: t.dotGlow.red, color: t.dot.red,
-                border: `1px solid ${t.dot.red}`, borderRadius: 8,
-              }}>{error}</div>
-            )}
-          </div>
-
-          {/* Input */}
-          <div style={{
-            padding: "10px 12px",
-            borderTop: `1px solid ${t.border}`,
-            display: "flex",
-            gap: 8,
-            background: t.surface,
-          }}>
-            <input
-              autoFocus
-              type="text"
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && submit()}
-              placeholder="Ask about properties, regulations, or the market..."
-              disabled={running}
-              style={{
-                flex: 1,
-                padding: "9px 12px",
-                background: isDark ? "rgba(0,0,0,0.25)" : "rgba(0,0,0,0.03)",
-                border: `1px solid ${t.border}`,
-                borderRadius: 10,
-                color: t.text,
-                fontSize: 13,
-                fontFamily: "inherit",
-                outline: "none",
-              }}
-              onFocus={(e) => (e.target.style.borderColor = t.accent)}
-              onBlur={(e) => (e.target.style.borderColor = t.border)}
-            />
-            <button
-              onClick={submit}
-              disabled={running || !input.trim()}
-              style={{
-                padding: "9px 14px",
-                background: !input.trim() || running ? t.accentGlow : t.accent,
-                color: !input.trim() || running ? t.textMuted : "#fff",
-                border: "none",
-                borderRadius: 10,
-                fontSize: 13,
-                fontWeight: 600,
-                fontFamily: "inherit",
-                cursor: !input.trim() || running ? "not-allowed" : "pointer",
-                display: "flex",
-                alignItems: "center",
-                gap: 6,
-                transition: "all .15s ease",
-              }}
-            >
-              <Send size={13} />
-              {running ? "..." : "Send"}
-            </button>
-          </div>
+          {renderHeader(close)}
+          {renderBody()}
+          {renderInput({ autoFocus: true })}
         </div>
       )}
 
@@ -317,6 +376,119 @@ export default function UnifiedOrb() {
         <PlasmaOrb size={56} isDark={isDark} style={{ pointerEvents: "none", animation: "uo-float 4s ease-in-out infinite" }} />
       </Suspense>
     </div>
+  );
+}
+
+// Slim input bar pinned to the bottom of the viewport on mobile non-home
+// routes. Tapping anywhere opens the bottom sheet so the user gets the
+// full chat experience with the keyboard. Auto-hides on scroll-down,
+// revealing on scroll-up — `hidden` is driven from MobileShell.
+function DockedRaiBar({ t, isDark, onExpand, hidden }) {
+  return (
+    <div
+      role="button"
+      onClick={onExpand}
+      aria-label="Open Rai"
+      aria-hidden={hidden ? "true" : undefined}
+      style={{
+        position: "fixed",
+        left: 8, right: 8,
+        bottom: "calc(8px + env(safe-area-inset-bottom, 0px))",
+        zIndex: 90,
+        background: isDark ? "rgba(14,16,36,0.97)" : "rgba(255,255,255,0.98)",
+        border: `1px solid ${t.border}`,
+        borderRadius: 999,
+        padding: "8px 10px 8px 14px",
+        boxShadow: isDark
+          ? "0 4px 20px rgba(0,0,0,0.55)"
+          : "0 4px 20px rgba(15,18,38,0.10)",
+        display: "flex",
+        alignItems: "center",
+        gap: 10,
+        backdropFilter: "blur(12px)",
+        cursor: "pointer",
+        transform: hidden ? "translateY(140%)" : "translateY(0)",
+        opacity: hidden ? 0 : 1,
+        pointerEvents: hidden ? "none" : "auto",
+        transition: "transform .22s cubic-bezier(0.4,0,0.2,1), opacity .22s",
+      }}
+    >
+      <img
+        src="/reapit-ai-logo.svg"
+        alt="Reapit AI"
+        style={{
+          height: 18,
+          width: "auto",
+          filter: isDark ? "brightness(0) invert(1)" : "none",
+          flexShrink: 0,
+          pointerEvents: "none",
+        }}
+      />
+      <span style={{ flex: 1, fontSize: 13, color: t.textMuted }}>
+        Ask Rai…
+      </span>
+      <span style={{
+        width: 32, height: 32, borderRadius: "50%",
+        background: t.accent,
+        display: "flex", alignItems: "center", justifyContent: "center",
+        color: "#fff",
+        flexShrink: 0,
+      }}>
+        <Send size={14} />
+      </span>
+    </div>
+  );
+}
+
+// Bottom sheet that slides up to 90% viewport height over the module page.
+// Backdrop dims + click-outside dismisses. Drag-to-close is Phase B polish.
+function MobileBottomSheet({ t, onClose, children }) {
+  return (
+    <>
+      <div
+        onClick={onClose}
+        style={{
+          position: "fixed", inset: 0, zIndex: 110,
+          background: "rgba(15,18,38,0.42)",
+          backdropFilter: "blur(2px)",
+          animation: "uo-fadeIn .18s ease forwards",
+        }}
+      />
+      <div style={{
+        position: "fixed",
+        left: 0, right: 0, bottom: 0,
+        zIndex: 111,
+        height: "90dvh",
+        background: t.surface,
+        borderTopLeftRadius: 18,
+        borderTopRightRadius: 18,
+        boxShadow: "0 -8px 32px rgba(15,18,38,0.18)",
+        display: "flex",
+        flexDirection: "column",
+        animation: "uo-sheetIn .22s cubic-bezier(0.4,0,0.2,1) forwards",
+        paddingBottom: "env(safe-area-inset-bottom, 0px)",
+        overflow: "hidden",
+      }}>
+        {/* Drag handle */}
+        <div style={{
+          height: 18,
+          display: "flex", alignItems: "center", justifyContent: "center",
+          flexShrink: 0,
+        }}>
+          <span style={{
+            width: 38, height: 4, borderRadius: 2,
+            background: t.border,
+          }} />
+        </div>
+        {children}
+      </div>
+      <style>{`
+        @keyframes uo-sheetIn {
+          from { transform: translateY(100%); }
+          to   { transform: translateY(0); }
+        }
+      `}</style>
+    </>
   );
 }
 
