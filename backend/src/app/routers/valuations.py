@@ -71,4 +71,25 @@ async def model_info() -> dict[str, Any]:
             out[key] = json.loads(path.read_text(encoding="utf-8"))
         else:
             out[key] = None
+
+    # Date range of the training data — surfaced in the Valuations UI so
+    # users know the model is anchored to 2016-2022 NSW sales, not today's
+    # prices.
+    from src.app.services.duckdb_client import fetch_rows
+    _, rows = fetch_rows(
+        """
+        SELECT MIN(date_sold)::DATE, MAX(date_sold)::DATE, COUNT(date_sold)
+        FROM properties
+        WHERE date_sold IS NOT NULL
+        """
+    )
+    if rows:
+        r = rows[0]
+        out["data_range"] = {
+            "earliest": str(r[0]) if r[0] else None,
+            "latest":   str(r[1]) if r[1] else None,
+            "earliest_year": r[0].year if r[0] else None,
+            "latest_year":   r[1].year if r[1] else None,
+            "n_with_date":   r[2],
+        }
     return out
