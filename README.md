@@ -42,6 +42,43 @@ three-tier eval suite with a CI gate.
   Reapit AI logo SVG), teal AI accent, brand red sweeps and heartbeat pulses on
   call-to-action copy, real Reapit favicon + RAI logo.
 
+## Screenshots
+
+<table>
+<tr>
+<td width="50%"><img src="docs/screenshots/dashboard.jpeg" alt="Dashboard hero, KPI strip, 7 agent cards, sample prompts" /></td>
+<td width="50%"><img src="docs/screenshots/orb-trace.jpeg" alt="Orb trace mid-stream — multi-agent run with planner, Compliance + Matcher tool calls visible" /></td>
+</tr>
+<tr>
+<td><strong>Dashboard</strong> — hero, KPI strip, 7-agent capability grid, animated sample-prompts hint.</td>
+<td><strong>Orb trace</strong> — multi-agent run mid-stream. Planner fans out to Compliance + Matcher; tool calls render as collapsible cards.</td>
+</tr>
+<tr>
+<td><img src="docs/screenshots/answer-card.jpeg" alt="Final answer card with three Revenue NSW citations and the $35,029 stamp duty figure" /></td>
+<td><img src="docs/screenshots/valuations.jpeg" alt="Valuations Predictor — price, 80% CI, per-feature contributions bar chart" /></td>
+</tr>
+<tr>
+<td><strong>Cited answer</strong> — $35,029 stamp duty with three Revenue NSW citations from the local corpus, no web fallback needed.</td>
+<td><strong>Valuations Predictor</strong> — RandomForest price + 80% CI from tree spread + per-feature contributions in AUD (perturbation-based).</td>
+</tr>
+<tr>
+<td><img src="docs/screenshots/compliance.jpeg" alt="Compliance Hub — search results with relevance meter strength bars" /></td>
+<td><img src="docs/screenshots/insights.jpeg" alt="Market Insights — Recharts dashboards and Leaflet bubble map" /></td>
+</tr>
+<tr>
+<td><strong>Compliance Hub</strong> — direct RAG search with relevance meter strength bars (Strong / Match / Partial / Weak) and source-type chips.</td>
+<td><strong>Market Insights</strong> — Recharts dashboards (price distribution, price vs km from CBD, beds breakdown, top suburbs) plus a Leaflet bubble map of suburb medians.</td>
+</tr>
+<tr>
+<td><img src="docs/screenshots/mobile-rai.png" alt="Mobile home page — Rai full-page below the top icon strip" /></td>
+<td><img src="docs/screenshots/mobile-pipeline.png" alt="Mobile Pipeline — lead cards with docked Rai input bar at the bottom" /></td>
+</tr>
+<tr>
+<td><strong>Mobile home</strong> — Rai-as-homepage. The 6-icon top strip replaces the desktop sidebar; the pill input bar is the same UI as the docked bar on other pages.</td>
+<td><strong>Mobile Pipeline</strong> — lead rows render as cards. The docked Rai bar pins to the bottom and auto-hides on scroll-down. Tap to expand into a 90dvh bottom sheet.</td>
+</tr>
+</table>
+
 ## Architecture
 
 ```
