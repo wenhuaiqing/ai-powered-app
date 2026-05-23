@@ -1,0 +1,13 @@
+id: compliance-bond-limits
+description: Tenancy-bond question routes Compliance and surfaces the 4-weeks-rent cap + Rental Bonds Online.
+prompt: "What's the maximum rental bond a landlord can ask for in NSW?"
+expected_agents:
+  - compliance
+expected_facts:
+  - "four weeks"
+  - "Residential Tenancies Act"
+  - "Rental Bonds Online"
+anti_facts:
+  - "six weeks"
+  - "two weeks"
+tier3: true

@@ -1,0 +1,9 @@
+id: data-query-bondi-sales
+description: Suburb-specific analytics — Data Query generates a SELECT that filters on suburb and aggregates.
+prompt: "How many properties have sold in Bondi and what's the average price?"
+expected_agents:
+  - data_query
+expected_facts:
+  - "Bondi"
+anti_facts: []
+tier3: false
