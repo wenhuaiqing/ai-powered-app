@@ -36,6 +36,27 @@ async def predict(req: PredictRequest) -> dict[str, Any]:
     return result.model_dump()
 
 
+@router.get("/suburbs")
+async def list_suburbs() -> dict[str, Any]:
+    """All distinct suburbs from `properties`, sorted alphabetically.
+
+    Used by the Valuations Predictor form to populate a searchable dropdown
+    so users can't typo a suburb (which would silently fall through to the
+    model's "Other" bucket via enrich_features).
+    """
+    from src.app.services.duckdb_client import fetch_rows
+    cols, rows = fetch_rows(
+        """
+        SELECT suburb, COUNT(*) AS sales
+        FROM properties
+        WHERE suburb IS NOT NULL
+        GROUP BY suburb
+        ORDER BY suburb
+        """
+    )
+    return {"suburbs": [{"name": r[0], "sales": r[1]} for r in rows]}
+
+
 @router.get("/model-info")
 async def model_info() -> dict[str, Any]:
     data_dir = Path(settings.data_dir)

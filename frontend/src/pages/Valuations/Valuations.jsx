@@ -8,6 +8,7 @@ import {
   Scatter, ScatterChart, Tooltip, XAxis, YAxis, Cell,
 } from "recharts";
 import { Calculator, LineChart as LineIcon, Sparkles } from "lucide-react";
+import SearchableSelect from "../../components/common/SearchableSelect.jsx";
 import { useTheme } from "../../context/ThemeContext.jsx";
 import { api, fmtAud, fmtInt } from "../../lib/api.js";
 import { useIsMobile } from "../../lib/useMediaQuery.js";
@@ -88,6 +89,24 @@ function Predictor({ t }) {
   const [result, setResult] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+  const [suburbs, setSuburbs] = useState([]);
+
+  useEffect(() => {
+    let cancelled = false;
+    api("/api/valuations/suburbs")
+      .then((d) => {
+        if (cancelled) return;
+        // Sort by sales descending so the most-modelled suburbs surface
+        // first when the input is empty; alphabetical fallback for ties.
+        const sorted = (d.suburbs || []).slice().sort((a, b) => {
+          if (b.sales !== a.sales) return b.sales - a.sales;
+          return a.name.localeCompare(b.name);
+        });
+        setSuburbs(sorted.map((s) => ({ value: s.name, label: s.name, hint: `${s.sales} sale${s.sales === 1 ? "" : "s"}` })));
+      })
+      .catch(() => { /* dropdown silently falls back to no options */ });
+    return () => { cancelled = true; };
+  }, []);
 
   const update = (k) => (e) => {
     const raw = e.target.value;
@@ -146,11 +165,12 @@ function Predictor({ t }) {
         </div>
 
         <Field t={t} label="Suburb">
-          <input
-            type="text"
+          <SearchableSelect
             value={form.suburb}
             onChange={update("suburb")}
-            style={inputStyle(t)}
+            options={suburbs}
+            placeholder={suburbs.length ? "Type to search 637 suburbs…" : "Loading…"}
+            disabled={suburbs.length === 0}
           />
         </Field>
         <Field t={t} label="Type">
