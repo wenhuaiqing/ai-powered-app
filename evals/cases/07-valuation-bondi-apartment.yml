@@ -1,0 +1,9 @@
+id: valuation-bondi-apartment
+description: Apartment-type valuation — Valuation accepts type=Apartment and produces a sensible price.
+prompt: "What's a 2-bed 1-bath apartment worth in Bondi, 90 sqm?"
+expected_agents:
+  - valuation
+expected_facts:
+  - "Bondi"
+anti_facts: []
+tier3: false

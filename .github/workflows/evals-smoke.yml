@@ -1,0 +1,90 @@
+name: Eval smoke
+
+# Tier 3 PR gate: boots the backend, runs every case tagged tier3: true
+# through /orb/chat, asserts planner routing + SSE event sequence + fact
+# coverage via string assertions. Fails the PR on any case failure.
+
+on:
+  pull_request:
+    paths:
+      - "backend/**"
+      - "evals/**"
+      - ".github/workflows/evals-smoke.yml"
+  workflow_dispatch: {}
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    env:
+      # Backend can't run the agents without these — they belong in
+      # repository secrets. The Tier 3 smoke needs the real LLM in the
+      # loop because it asserts on actual planner output and answer
+      # content, not just heuristic routing.
+      AZURE_OPENAI_ENDPOINT:    ${{ secrets.AZURE_OPENAI_ENDPOINT }}
+      AZURE_OPENAI_API_KEY:     ${{ secrets.AZURE_OPENAI_API_KEY }}
+      AZURE_OPENAI_CHAT_MODEL:  ${{ secrets.AZURE_OPENAI_CHAT_MODEL }}
+      AZURE_OPENAI_EMBED_MODEL: ${{ secrets.AZURE_OPENAI_EMBED_MODEL }}
+      TAVILY_API_KEY:           ${{ secrets.TAVILY_API_KEY }}
+      PYTHONUTF8: "1"
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+
+      - name: Set up Python 3.12
+        run: uv python install 3.12
+
+      - name: Install backend deps
+        working-directory: backend
+        run: uv sync
+
+      - name: Build data artefacts
+        working-directory: backend
+        run: |
+          uv run python ../scripts/build_db.py
+          uv run python ../scripts/train_model.py
+          uv run python ../scripts/stage_regulation_corpus.py
+          uv run python ../scripts/build_regulation_corpus.py
+          uv run python ../scripts/build_review_embeddings.py
+
+      - name: Start backend
+        working-directory: backend
+        run: |
+          uv run uvicorn src.main:app --port 8000 --log-level warning > ../backend.log 2>&1 &
+          echo $! > ../backend.pid
+          for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15; do
+            if curl -fs http://localhost:8000/health > /dev/null; then
+              echo "backend ready"; exit 0
+            fi
+            sleep 1
+          done
+          echo "backend failed to start"
+          cat ../backend.log
+          exit 1
+
+      - name: Run Tier 3 smoke
+        working-directory: backend
+        run: uv run python ../evals/run.py --tier smoke --backend http://localhost:8000
+
+      - name: Upload results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: eval-results
+          path: evals/results/*.json
+          if-no-files-found: ignore
+
+      - name: Tail backend log on failure
+        if: failure()
+        run: tail -200 backend.log || true
+
+      - name: Stop backend
+        if: always()
+        run: |
+          if [ -f backend.pid ]; then
+            kill "$(cat backend.pid)" 2>/dev/null || true
+          fi

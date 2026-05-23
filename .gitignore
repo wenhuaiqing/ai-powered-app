@@ -37,6 +37,10 @@ data/*
 data/regulations/embeddings.parquet
 data/regulations/*.parquet
 
+# Eval run outputs — keep the folder, ignore the timestamped JSON dumps.
+evals/results/*
+!evals/results/.gitkeep
+
 # IDE
 .vscode/
 .idea/

@@ -1,0 +1,8 @@
+id: matcher-renter
+description: Renter-style brief still routes Matcher (the agent handles buyers + tenants).
+prompt: "Looking for a quiet 2-bedroom rental near a train station, budget $700/week."
+expected_agents:
+  - matcher
+expected_facts: []
+anti_facts: []
+tier3: false

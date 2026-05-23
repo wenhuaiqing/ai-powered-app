@@ -1,0 +1,9 @@
+id: market-watch-news
+description: Live-news question routes Market Watch (Tavily). Answer cites at least one URL.
+prompt: "What's happening in the Sydney property market this week?"
+expected_agents:
+  - market_watch
+expected_facts:
+  - "Sydney"
+anti_facts: []
+tier3: false

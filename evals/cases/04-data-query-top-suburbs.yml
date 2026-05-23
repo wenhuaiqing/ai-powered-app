@@ -1,0 +1,9 @@
+id: data-query-top-suburbs
+description: Analytics question routes Data Query and the SQL validator passes.
+prompt: "What are the top 10 suburbs by median sale price in our dataset?"
+expected_agents:
+  - data_query
+expected_facts:
+  - "median"
+anti_facts: []
+tier3: true
