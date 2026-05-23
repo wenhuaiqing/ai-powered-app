@@ -4,6 +4,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Mail, MapPin, Phone, Search, Sparkles, UserCheck } from "lucide-react";
 import Drawer from "../../components/common/Drawer.jsx";
+import { AgentActionHint } from "../../components/common/SweepText.jsx";
 import { useOrb } from "../../context/OrbContext.jsx";
 import { useTheme } from "../../context/ThemeContext.jsx";
 import { api, fmtAud, fmtDate } from "../../lib/api.js";
@@ -90,7 +91,14 @@ function Header({ t, count }) {
         Pipeline
       </h1>
       <p style={{ margin: 0, fontSize: 13, color: t.textMuted }}>
-        {count} synthetic CRM lead{count === 1 ? "" : "s"}. Click a row to triage or auto-match listings.
+        {count} synthetic CRM lead{count === 1 ? "" : "s"}.{" "}
+        <AgentActionHint segments={[
+          { type: "text",  value: "Click a row to fire " },
+          { type: "agent", value: "Lead Triage" },
+          { type: "text",  value: " or " },
+          { type: "agent", value: "Property Matcher" },
+          { type: "text",  value: " agents on the lead." },
+        ]} />
       </p>
     </div>
   );
