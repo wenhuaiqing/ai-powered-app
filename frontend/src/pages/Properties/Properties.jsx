@@ -4,6 +4,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { BedDouble, Bath, Calculator, CarFront, FileText, MapPin, ScaleIcon, Sparkles } from "lucide-react";
 import Drawer from "../../components/common/Drawer.jsx";
+import { AgentActionHint } from "../../components/common/SweepText.jsx";
 import { useOrb } from "../../context/OrbContext.jsx";
 import { useTheme } from "../../context/ThemeContext.jsx";
 import { api, fmtAud, fmtDate, fmtInt } from "../../lib/api.js";
@@ -83,7 +84,16 @@ function Header({ t, count }) {
         Properties
       </h1>
       <p style={{ margin: 0, fontSize: 13, color: t.textMuted }}>
-        {fmtInt(count)} synthetic listing{count === 1 ? "" : "s"} backed by the Domain Sydney sales data. Click a row to open the agent toolkit.
+        {fmtInt(count)} synthetic listing{count === 1 ? "" : "s"} backed by the Domain Sydney sales data.{" "}
+        <AgentActionHint segments={[
+          { type: "text",  value: "Click a row to fire " },
+          { type: "agent", value: "Valuation" },
+          { type: "text",  value: ", " },
+          { type: "agent", value: "Listing Drafter" },
+          { type: "text",  value: " or " },
+          { type: "agent", value: "Compliance" },
+          { type: "text",  value: " agents on the property." },
+        ]} />
       </p>
     </div>
   );
