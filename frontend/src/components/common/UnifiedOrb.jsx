@@ -131,12 +131,16 @@ export default function UnifiedOrb() {
   }, [input, running, location.pathname, runStream]);
 
   // Consume pending instructions from the OrbContext — module pages call
-  // useOrb().runAgent(...) or .openWithPrompt(...) and this picks them up.
+  // useOrb().runAgent(...) or .openWithPrompt(...) or .openPanel().
   useEffect(() => {
     if (!orb?.pending) return;
     const p = orb.pending;
     orb.consume();
     setOpen(true);
+    if (p.mode === "open") {
+      // Just open the panel; user will type a question themselves.
+      return;
+    }
     if (p.mode === "chat") {
       const ctx = { module: pathToModule(location.pathname), current_item: null, ...(p.page_context || {}) };
       runStream("/orb/chat", p.message, { message: p.message, page_context: ctx });
@@ -202,11 +206,8 @@ export default function UnifiedOrb() {
                 flexShrink: 0,
               }}
             />
-            <div style={{ flex: 1, lineHeight: 1.1 }}>
-              <div style={{ fontSize: 14, fontWeight: 600, color: t.text }}>AppMarket co-pilot</div>
-              <div style={{ fontSize: 11, color: t.textMuted, marginTop: 2 }}>
-                Ask anything — agents route automatically.
-              </div>
+            <div style={{ flex: 1, fontSize: 12, color: t.textMuted, lineHeight: 1.35 }}>
+              AppMarket co-pilot — ask anything.
             </div>
             <button onClick={close} style={iconBtn(t)} title="Close">
               <X size={16} />
@@ -298,8 +299,8 @@ export default function UnifiedOrb() {
       <div style={{ position: "relative", width: 56, height: 56, animation: "uo-float 4s ease-in-out infinite" }}>
         <button
           onClick={() => (open ? close() : setOpen(true))}
-          aria-label="Open AppMarket co-pilot"
-          title="AppMarket co-pilot"
+          aria-label="Open Rai — AppMarket co-pilot"
+          title="Rai — AppMarket co-pilot"
           style={{
             width: 56, height: 56,
             border: "none",

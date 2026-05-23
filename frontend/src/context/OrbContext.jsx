@@ -22,12 +22,19 @@ export function OrbProvider({ children }) {
     setPending({ id: seq.current, mode: "run-agent", agent, inputs, message, page_context });
   }, []);
 
+  // Just open the panel — no prompt submitted. Used by the "open Rai" hint
+  // on the Dashboard so the user can type their own question.
+  const openPanel = useCallback(() => {
+    seq.current += 1;
+    setPending({ id: seq.current, mode: "open" });
+  }, []);
+
   const consume = useCallback(() => {
     setPending(null);
   }, []);
 
   return (
-    <Ctx.Provider value={{ pending, openWithPrompt, runAgent, consume }}>
+    <Ctx.Provider value={{ pending, openWithPrompt, runAgent, openPanel, consume }}>
       {children}
     </Ctx.Provider>
   );
