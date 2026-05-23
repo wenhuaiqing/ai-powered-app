@@ -248,6 +248,70 @@ export default function UnifiedOrb({ dockedHidden = false } = {}) {
     </div>
   );
 
+  // Mobile input — pill style that matches the docked bar so the
+  // homepage / bottom sheet / docked bar all read as the same surface.
+  const renderMobileInput = ({ autoFocus = false } = {}) => (
+    <div style={{
+      padding: "8px 12px calc(8px + env(safe-area-inset-bottom, 0px))",
+      background: t.surface,
+      borderTop: `1px solid ${t.border}`,
+      flexShrink: 0,
+    }}>
+      <div style={{
+        display: "flex",
+        alignItems: "center",
+        gap: 8,
+        padding: "4px 4px 4px 14px",
+        background: isDark ? "rgba(0,0,0,0.25)" : "rgba(0,0,0,0.03)",
+        border: `1px solid ${t.border}`,
+        borderRadius: 999,
+      }}>
+        <input
+          autoFocus={autoFocus}
+          type="text"
+          value={input}
+          onChange={(e) => setInput(e.target.value)}
+          onKeyDown={(e) => e.key === "Enter" && submit()}
+          placeholder="Ask Rai…"
+          disabled={running}
+          style={{
+            flex: 1,
+            minWidth: 0,
+            padding: "10px 0",
+            background: "transparent",
+            border: "none",
+            color: t.text,
+            fontSize: 14,
+            fontFamily: "inherit",
+            outline: "none",
+          }}
+        />
+        <button
+          onClick={submit}
+          disabled={running}
+          aria-label="Send"
+          title="Send"
+          style={{
+            width: 32, height: 32, borderRadius: "50%",
+            // Always solid indigo + white icon so the homepage / sheet
+            // matches the docked bar exactly. Submit() short-circuits on
+            // empty input so the button is safe to tap when empty.
+            background: t.accent,
+            color: "#fff",
+            opacity: running ? 0.55 : 1,
+            border: "none",
+            cursor: running ? "wait" : "pointer",
+            display: "flex", alignItems: "center", justifyContent: "center",
+            flexShrink: 0,
+            transition: "opacity .15s",
+          }}
+        >
+          <Send size={14} />
+        </button>
+      </div>
+    </div>
+  );
+
   const renderInput = ({ autoFocus = true } = {}) => (
     <div style={{
       padding: "10px 12px",
@@ -306,14 +370,14 @@ export default function UnifiedOrb({ dockedHidden = false } = {}) {
 
   // ---- Mode branches -------------------------------------------------------
 
-  // Mobile + home: Rai fills the body below MobileNav. No docked bar, no
-  // sheet. The parent <main> already constrains the height.
+  // Mobile + home: Rai fills the body below MobileNav. No internal header
+  // chrome — the top nav already brands the page with the active RAI logo.
+  // No docked bar, no sheet. Parent <main> constrains the height.
   if (isMobile && isHome) {
     return (
       <div style={{ display: "flex", flexDirection: "column", height: "100%", background: t.surface }}>
-        {renderHeader(null)}
         {renderBody()}
-        {renderInput({ autoFocus: false })}
+        {renderMobileInput({ autoFocus: false })}
       </div>
     );
   }
@@ -335,7 +399,7 @@ export default function UnifiedOrb({ dockedHidden = false } = {}) {
           >
             {renderHeader(() => setMobileExpanded(false))}
             {renderBody()}
-            {renderInput({ autoFocus: true })}
+            {renderMobileInput({ autoFocus: true })}
           </MobileBottomSheet>
         )}
       </>

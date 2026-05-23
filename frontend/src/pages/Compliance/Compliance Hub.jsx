@@ -201,12 +201,17 @@ function Citation({ t, c }) {
         <a href={c.url} target="_blank" rel="noopener noreferrer" style={{
           display: "inline-flex", alignItems: "center", gap: 4,
           marginTop: 8,
+          maxWidth: "100%",
           fontSize: 12,
           color: t.accent,
           textDecoration: "underline",
+          wordBreak: "break-all",
+          overflowWrap: "anywhere",
         }}>
-          <ExternalLink size={11} />
-          {c.url.replace(/^https?:\/\//, "").slice(0, 80)}
+          <ExternalLink size={11} style={{ flexShrink: 0 }} />
+          <span style={{ overflow: "hidden", textOverflow: "ellipsis" }}>
+            {c.url.replace(/^https?:\/\//, "")}
+          </span>
         </a>
       )}
     </article>

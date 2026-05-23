@@ -36,10 +36,12 @@ function DesktopShell() {
         <div style={{ flex: 1, overflow: "auto" }}>
           <div style={{ padding: "24px 28px" }}>
             <Routes>
+              {/* Desktop: bare "/" redirects to the Dashboard module. */}
+              <Route path="/" element={<Navigate to="/dashboard" replace />} />
               {ROUTES.map((r) => (
                 <Route key={r.to} path={r.to} element={<r.component />} />
               ))}
-              <Route path="*" element={<Navigate to="/" replace />} />
+              <Route path="*" element={<Navigate to="/dashboard" replace />} />
             </Routes>
           </div>
         </div>
@@ -71,17 +73,32 @@ function MobileShell() {
     }}>
       <MobileNav routes={ROUTES} />
 
-      <main style={{ flex: 1, display: "flex", flexDirection: "column", minHeight: 0, position: "relative" }}>
+      <main style={{
+        flex: 1,
+        display: "flex",
+        flexDirection: "column",
+        minHeight: 0,
+        minWidth: 0,
+        position: "relative",
+        // Belt-and-braces: any module page that's not yet responsively styled
+        // (Valuations, Insights, etc) won't blow out the page width with a
+        // horizontal scrollbar — we just clip the overflow.
+        overflowX: "hidden",
+      }}>
         {isHome ? (
           // Home becomes Rai full-page — module Dashboard is skipped on
           // mobile per spec ("orb window becomes the homepage of the app").
           <UnifiedOrb />
         ) : (
           <>
-            <div ref={setScrollEl} style={{ flex: 1, overflow: "auto" }}>
+            <div
+              ref={setScrollEl}
+              style={{ flex: 1, overflowY: "auto", overflowX: "hidden", minWidth: 0 }}
+            >
               <div style={{
                 // Leave room for the docked Rai bar (~52px) + safe-area inset.
                 padding: "16px 14px calc(80px + env(safe-area-inset-bottom, 0px))",
+                minWidth: 0,
               }}>
                 <Routes>
                   {ROUTES.map((r) => (
