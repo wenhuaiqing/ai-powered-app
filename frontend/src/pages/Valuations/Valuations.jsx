@@ -382,12 +382,12 @@ function ContributionsChart({ t, contributions }) {
 
 function ModelExplorer({ t, info }) {
   // info is fetched at the top-level Valuations component and passed in.
-  // While it's null we show a tiny loading note; the subtitle has already
-  // appeared so the page doesn't feel blank.
+  // While it's null we render placeholders the same shape as the real
+  // layout so the page doesn't jump when the data lands.
   const loading = info == null;
   const error = null;
 
-  if (loading) return <div style={{ color: t.textMuted, fontSize: 13 }}>Loading model info…</div>;
+  if (loading) return <ModelExplorerSkeleton t={t} />;
   if (error) return (
     <div style={{ padding: "10px 12px", background: t.dotGlow.red, color: t.dot.red, border: `1px solid ${t.dot.red}`, borderRadius: 8, fontSize: 13 }}>
       {error}
@@ -459,6 +459,74 @@ function ModelExplorer({ t, info }) {
             <Scatter data={res} fill={t.accent} opacity={0.55} />
           </ScatterChart>
         </ResponsiveContainer>
+      </div>
+    </div>
+  );
+}
+
+
+// Skeleton placeholders for the Model Explorer's metric grid + two charts.
+// Matches the real layout's spacing and card frames so when the data lands
+// the only thing that changes is the content of the rectangles.
+function ModelExplorerSkeleton({ t }) {
+  const card = {
+    background: t.surface,
+    border: `1px solid ${t.border}`,
+    borderRadius: 10,
+  };
+  const bar = (w, h = 10, op = 0.6) => ({
+    height: h, width: w,
+    background: t.borderBright,
+    borderRadius: 4,
+    opacity: op,
+  });
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(160px, 1fr))", gap: 10 }}>
+        {Array.from({ length: 6 }).map((_, i) => (
+          <div key={i} style={{ ...card, padding: "12px 14px", opacity: 0.65 - i * 0.03 }}>
+            <div style={bar("55%", 8, 0.55)} />
+            <div style={{ ...bar("40%", 16, 0.7), marginTop: 8 }} />
+          </div>
+        ))}
+      </div>
+
+      <div style={{ ...card, padding: "14px 16px", height: 280, opacity: 0.6 }}>
+        <div style={bar("28%", 8)} />
+        <div style={{ display: "flex", flexDirection: "column", gap: 6, marginTop: 14 }}>
+          {Array.from({ length: 8 }).map((_, i) => (
+            <div key={i} style={bar(`${88 - i * 8}%`, 10, 0.55 - i * 0.05)} />
+          ))}
+        </div>
+      </div>
+
+      <div style={{ ...card, padding: "14px 16px", height: 280, opacity: 0.5 }}>
+        <div style={bar("32%", 8)} />
+        <div style={{ position: "relative", marginTop: 14, height: 220, overflow: "hidden" }}>
+          {Array.from({ length: 32 }).map((_, i) => {
+            const seed = (i * 9301 + 49297) % 233280 / 233280;
+            const x = 6 + seed * 88;
+            const y = 6 + ((i * 7) % 92);
+            return (
+              <span key={i} style={{
+                position: "absolute",
+                left: `${x}%`, top: `${y}%`,
+                width: 7, height: 7, borderRadius: "50%",
+                background: t.accent,
+                opacity: 0.18,
+              }} />
+            );
+          })}
+          <span style={{
+            position: "absolute",
+            left: 0, bottom: 0,
+            width: "100%", height: 1,
+            background: t.borderBright,
+            transformOrigin: "left bottom",
+            transform: "rotate(-22deg)",
+            opacity: 0.45,
+          }} />
+        </div>
       </div>
     </div>
   );
