@@ -1,6 +1,6 @@
 import { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { useLocation } from "react-router-dom";
-import { Send, X } from "lucide-react";
+import { RefreshCw, Send, X } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import AgentTrace from "../agents/AgentTrace.jsx";
@@ -8,6 +8,47 @@ import { useOrb } from "../../context/OrbContext.jsx";
 import { useTheme } from "../../context/ThemeContext.jsx";
 import { appendEventToList, streamAgent } from "../../lib/orbStream.js";
 import { useIsMobile } from "../../lib/useMediaQuery.js";
+
+// ----------------------------------------------------------------------------
+// Per-tab chat persistence — sessionStorage so the conversation survives a
+// page refresh but clears when the tab closes. Trade-off vs localStorage:
+// new tabs get a clean slate, which is the right granularity for a portfolio
+// demo (interviewers shouldn't inherit each other's history).
+// ----------------------------------------------------------------------------
+const STORAGE_KEY = "rai-orb:messages";
+
+function loadMessages() {
+  try {
+    if (typeof sessionStorage === "undefined") return [];
+    const raw = sessionStorage.getItem(STORAGE_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    // A trace marked running=true on load is stale (the in-flight request
+    // died with the previous page) — mark it done so the spinner doesn't
+    // hang forever.
+    return parsed.map((m) =>
+      m && m.role === "trace" && m.running
+        ? { ...m, running: false }
+        : m,
+    );
+  } catch {
+    return [];
+  }
+}
+
+function saveMessages(msgs) {
+  try {
+    if (typeof sessionStorage === "undefined") return;
+    sessionStorage.setItem(STORAGE_KEY, JSON.stringify(msgs));
+  } catch {
+    // Quota exceeded or storage disabled — silently swallow.
+  }
+}
+
+function clearStoredMessages() {
+  try { sessionStorage?.removeItem(STORAGE_KEY); } catch { /* ignore */ }
+}
 
 const PlasmaOrb = lazy(() => import("./PlasmaOrb.jsx"));
 
@@ -52,7 +93,8 @@ export default function UnifiedOrb({ dockedHidden = false } = {}) {
   //   {role:"trace", events, durationMs?, running}
   //   {role:"answer", data}
   // Each user prompt produces all three. The trace stays in the history.
-  const [messages, setMessages] = useState([]);
+  // Hydrated from sessionStorage so a refresh keeps the conversation.
+  const [messages, setMessages] = useState(loadMessages);
   const [running, setRunning] = useState(false);
   const [error, setError] = useState(null);
   const scrollRef = useRef(null);
@@ -64,10 +106,24 @@ export default function UnifiedOrb({ dockedHidden = false } = {}) {
     if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
   }, [messages, running]);
 
+  // Persist the conversation to sessionStorage on every change. Cheap —
+  // typical sessions are a handful of messages.
+  useEffect(() => {
+    saveMessages(messages);
+  }, [messages]);
+
   const close = useCallback(() => {
     setClosing(true);
     setTimeout(() => { setOpen(false); setClosing(false); }, 180);
   }, []);
+
+  const clearChat = useCallback(() => {
+    if (running && abortRef.current) abortRef.current.abort();
+    setMessages([]);
+    setInput("");
+    setError(null);
+    clearStoredMessages();
+  }, [running]);
 
   // Drive a streamed orb call. `path` is /orb/chat or /orb/run-agent.
   // `userMessage` is what shows in the conversation as the user bubble.
@@ -234,6 +290,53 @@ export default function UnifiedOrb({ dockedHidden = false } = {}) {
     }}>
       {messages.length === 0 && !running && (
         <SamplePrompts onPick={(p) => submit(p)} t={t} />
+      )}
+      {messages.length > 0 && (
+        <div style={{
+          position: "sticky",
+          top: -12,  // counteract the body's 12px padding-top so it pins flush
+          marginTop: -12,
+          marginBottom: 4,
+          paddingTop: 4,
+          paddingBottom: 4,
+          background: t.surface,
+          display: "flex",
+          justifyContent: "flex-end",
+          zIndex: 1,
+          flexShrink: 0,
+        }}>
+          <button
+            type="button"
+            onClick={clearChat}
+            title="Clear this conversation"
+            style={{
+              display: "flex", alignItems: "center", gap: 5,
+              padding: "4px 9px",
+              background: "transparent",
+              border: `1px solid ${t.border}`,
+              borderRadius: 999,
+              color: t.textMuted,
+              fontSize: 11,
+              fontWeight: 600,
+              fontFamily: "inherit",
+              cursor: "pointer",
+              transition: "border-color .15s, color .15s, background .15s",
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.borderColor = t.accent;
+              e.currentTarget.style.color = t.accent;
+              e.currentTarget.style.background = t.accentGlow;
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.borderColor = t.border;
+              e.currentTarget.style.color = t.textMuted;
+              e.currentTarget.style.background = "transparent";
+            }}
+          >
+            <RefreshCw size={11} />
+            New chat
+          </button>
+        </div>
       )}
       {messages.map((m, i) => (
         <MessageRow key={i} message={m} t={t} />
