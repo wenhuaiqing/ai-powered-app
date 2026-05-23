@@ -10,6 +10,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import time
 from typing import Any, AsyncIterator
 
 from fastapi import APIRouter
@@ -17,6 +18,7 @@ from pydantic import BaseModel, Field
 from sse_starlette.sse import EventSourceResponse
 
 from src.app.services.agents.graph import build_graph
+from src.app.services.agents.runs import from_event_log
 from src.app.services.agents.runtime import set_queue
 from src.app.services.agents.schemas import (
     AgentCall,
@@ -58,10 +60,12 @@ def _json_default(obj: Any) -> Any:
 
 
 async def _run_graph_sse(initial: GraphState) -> EventSourceResponse:
-    """Common SSE plumbing — runs the graph, drains a queue, streams events."""
+    """Common SSE plumbing — runs the graph, drains a queue, streams events,
+    then persists the run to MySQL (agent_runs) for the activity feed."""
     queue: asyncio.Queue[tuple[str, dict[str, Any]]] = asyncio.Queue()
     set_queue(queue)
     graph = build_graph()
+    started_at = time.monotonic()
 
     async def runner() -> None:
         try:
@@ -77,15 +81,29 @@ async def _run_graph_sse(initial: GraphState) -> EventSourceResponse:
     task = asyncio.create_task(runner())
 
     async def event_stream() -> AsyncIterator[dict[str, str]]:
+        events: list[tuple[str, dict[str, Any]]] = []
         try:
             while True:
                 event_type, data = await queue.get()
+                events.append((event_type, data))
                 yield {"event": event_type, "data": _serialise(data)}
                 if event_type == "done":
                     break
         finally:
             if not task.done():
                 task.cancel()
+            try:
+                duration_ms = int((time.monotonic() - started_at) * 1000)
+                ctx_dump = initial.page_context.model_dump() if initial.page_context else {}
+                from_event_log(
+                    user_message=initial.user_message or "",
+                    page_module=ctx_dump.get("module"),
+                    page_context=ctx_dump,
+                    events=events,
+                    duration_ms=duration_ms,
+                )
+            except Exception as exc:  # noqa: BLE001
+                log.warning("agent_runs persistence skipped: %s", exc)
 
     return EventSourceResponse(event_stream())
 

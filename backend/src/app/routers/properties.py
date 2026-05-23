@@ -1,4 +1,8 @@
-"""/api/properties — list + detail views over the listings_enriched DuckDB view."""
+"""/api/properties — listings backed by MySQL (OLTP).
+
+Joins listings -> properties -> suburbs -> agents in SQL so the API
+response shape matches the legacy DuckDB `listings_enriched` view.
+"""
 
 from __future__ import annotations
 
@@ -6,15 +10,43 @@ from typing import Any, Literal
 
 from fastapi import APIRouter, HTTPException, Query
 
-from src.app.services.duckdb_client import fetch_rows
+from src.app.services.mysql_client import fetch_all, rows_to_dicts
 
 router = APIRouter(prefix="/api/properties", tags=["properties"])
 
 StatusFilter = Literal["all", "For Sale", "For Lease"]
 
 
-def _rows_to_dicts(cols: list[str], rows: list[list[Any]]) -> list[dict[str, Any]]:
-    return [dict(zip(cols, r)) for r in rows]
+_BASE_SELECT = """
+    SELECT
+        l.listing_id,
+        l.status,
+        l.stage,
+        l.asking_price,
+        l.listed_date,
+        l.days_on_market,
+        a.name AS agent_name,
+        p.suburb,
+        p.num_bed,
+        p.num_bath,
+        p.num_parking,
+        p.property_size,
+        p.property_type AS type,
+        p.km_from_cbd,
+        s.region,
+        s.median_house_price_2021,
+        s.family_friendliness,
+        s.safety,
+        p.suburb_lat,
+        p.suburb_lng,
+        p.property_id,
+        l.headline,
+        l.body_markdown
+    FROM listings l
+    JOIN properties p ON l.property_id = p.property_id
+    LEFT JOIN agents a ON l.agent_id = a.agent_id
+    LEFT JOIN suburbs s ON LOWER(s.name) = LOWER(p.suburb)
+"""
 
 
 @router.get("/list")
@@ -22,49 +54,42 @@ async def list_properties(
     status: StatusFilter = "all",
     limit: int = Query(60, ge=1, le=200),
 ) -> dict[str, Any]:
-    where_clauses = []
-    params: list[Any] = []
+    where = ""
+    params: dict[str, Any] = {"lim": limit}
     if status != "all":
-        where_clauses.append("status = ?")
-        params.append(status)
-    where = ("WHERE " + " AND ".join(where_clauses)) if where_clauses else ""
-    params.append(limit)
-    cols, rows = fetch_rows(
-        f"""
-        SELECT listing_id, status, stage, asking_price, listed_date, days_on_market,
-               agent_name, suburb, num_bed, num_bath, num_parking, property_size,
-               type, km_from_cbd, region, median_house_price_2021, family_friendliness,
-               safety, suburb_lat, suburb_lng, property_id
-        FROM listings_enriched
-        {where}
-        ORDER BY listed_date DESC
-        LIMIT ?
-        """,
+        where = "WHERE l.status = :status"
+        params["status"] = status
+    cols, rows = fetch_all(
+        f"{_BASE_SELECT} {where} ORDER BY l.listed_date DESC LIMIT :lim",
         params,
     )
-    items = _rows_to_dicts(cols, rows)
+    items = rows_to_dicts(cols, rows)
     return {"items": items, "count": len(items)}
 
 
 @router.get("/{listing_id}")
 async def get_property(listing_id: str) -> dict[str, Any]:
-    cols, rows = fetch_rows("SELECT * FROM listings_enriched WHERE listing_id = ?", [listing_id])
+    cols, rows = fetch_all(
+        f"{_BASE_SELECT} WHERE l.listing_id = :lid",
+        {"lid": listing_id},
+    )
     if not rows:
         raise HTTPException(status_code=404, detail=f"listing {listing_id} not found")
-    return _rows_to_dicts(cols, rows)[0]
+    return rows_to_dicts(cols, rows)[0]
 
 
 @router.get("/_stats/overview")
 async def overview_stats() -> dict[str, Any]:
-    cols, rows = fetch_rows(
+    cols, rows = fetch_all(
         """
         SELECT
-            COUNT(*) FILTER (WHERE status = 'For Sale')   AS for_sale,
-            COUNT(*) FILTER (WHERE status = 'For Lease')  AS for_lease,
-            COUNT(*) FILTER (WHERE stage = 'Under Offer') AS under_offer,
-            AVG(days_on_market)                            AS avg_days_on_market,
-            COUNT(DISTINCT suburb)                         AS suburbs
-        FROM listings_enriched
+            SUM(CASE WHEN status = 'For Sale'    THEN 1 ELSE 0 END) AS for_sale,
+            SUM(CASE WHEN status = 'For Lease'   THEN 1 ELSE 0 END) AS for_lease,
+            SUM(CASE WHEN stage  = 'Under Offer' THEN 1 ELSE 0 END) AS under_offer,
+            AVG(days_on_market)                                     AS avg_days_on_market,
+            COUNT(DISTINCT p.suburb)                                AS suburbs
+        FROM listings l
+        JOIN properties p ON l.property_id = p.property_id
         """
     )
-    return _rows_to_dicts(cols, rows)[0]
+    return rows_to_dicts(cols, rows)[0]
