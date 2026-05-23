@@ -112,8 +112,9 @@ three-tier eval suite with a CI gate.
                             final_message
 ```
 
-- **Backend**: FastAPI + LangGraph + Pydantic + DuckDB + scikit-learn + Azure
-  OpenAI (`openai` SDK pointed at the Azure v1 endpoint) + Tavily.
+- **Backend**: FastAPI + LangGraph + Pydantic + DuckDB + MySQL (OLTP via
+  SQLAlchemy + PyMySQL) + scikit-learn + Azure OpenAI (`openai` SDK pointed
+  at the Azure v1 endpoint) + Tavily.
 - **Frontend**: React 18 + Vite 5 + React Router 7 + Recharts + Leaflet +
   `react-ai-orb` (custom PlasmaOrb visual) + lucide-react.
 - **AI contracts**: every node emits a typed Pydantic model. The graph state
@@ -122,6 +123,70 @@ three-tier eval suite with a CI gate.
 - **Harness**: 30s per-node `asyncio.wait_for`, 90s end-to-end, 1 retry on
   `pydantic.ValidationError`, typed `NodeError` captured into graph state on
   the second failure so the Summariser handles partial results gracefully.
+
+## Data architecture
+
+The app runs on **two databases** with a real pipeline between them — the
+"OLTP feeding OLAP" pattern that estate-agency platforms actually use in
+production. Mirroring this here gives every interaction a credible
+write-path and gives the analytics queries a denormalised table to scan.
+
+```
+   misc/*.csv                                       reads (transactional)
+       │                                          ┌──────────────────────┐
+       ▼                                          │ /api/properties      │
+   build_mysql.py     ┌────────────────────┐      │ /api/pipeline        │
+   (load + truncate)─►│   MySQL (OLTP)     │◄─────│ /orb/* (agent_runs)  │
+                      │                    │      └──────────────────────┘
+                      │ properties · leads │            writes
+                      │ listings · agents  │      (lead status, agent_runs)
+                      │ lead_events        │
+                      │ agent_runs         │
+                      └─────────┬──────────┘
+                                │ extract → denormalise → load
+                                ▼  (scripts/etl_mysql_to_duckdb.py)
+                      ┌────────────────────┐
+                      │  DuckDB (OLAP)     │      ┌──────────────────────┐
+                      │                    │◄─────│ /api/insights        │
+                      │ properties (flat)  │      │ /api/valuations      │
+                      │ listings_enriched  │      │ Data Query agent     │
+                      │ (view: 4-way JOIN) │      │ Matcher agent        │
+                      └────────────────────┘      └──────────────────────┘
+                              reads (analytics)
+```
+
+**OLTP — MySQL 8 / InnoDB**
+- Source of truth. Normalised + indexed for point lookups. FK joins, audit
+  logs, status state machines.
+- Tables: `agents`, `properties`, `suburbs`, `leads`, `lead_events`
+  (status-change audit log), `listings`, `agent_runs` (every orb
+  invocation persists here — powers the **Recent agent activity** feed on
+  the Dashboard).
+- Schema is managed by numbered SQL files under `scripts/migrations/`
+  and applied by `scripts/migrate_mysql.py` (tracks state in
+  `schema_migrations` — idempotent).
+
+**OLAP — DuckDB**
+- Columnar, embedded, denormalised. Holds the 11k-row sales reference for
+  the RandomForest + the `listings_enriched` view (properties + listings
+  + suburbs + agents pre-joined) for sub-millisecond Insights queries.
+- Rebuilt from MySQL by `scripts/etl_mysql_to_duckdb.py` — extract,
+  rename `property_type → type`, recreate `listings_enriched`, recompute
+  counts. Safe to schedule (cron locally, EventBridge in AWS).
+
+**Writes that close the loop**
+- `POST /api/pipeline/leads/{id}/status` — transitions a lead in `leads` +
+  appends a row to `lead_events` inside one transaction.
+- `POST /orb/chat` — every run records to `agent_runs` after the SSE
+  drain finishes, including duration, agents called, web-search usage,
+  and (when invoked from a drawer) the related `lead_id` / `listing_id`.
+
+**Local stack (docker-compose)** — `docker compose up -d mysql` brings up
+MySQL on `:3306`; backend reads `MYSQL_HOST` / `MYSQL_PASSWORD` from
+`.env`. **AWS posture** — `infra/` provisions `db.t4g.micro` RDS MySQL in
+private subnets with credentials in Secrets Manager; the seed task
+definition runs the same `scripts/seed_all.py` inside the VPC, no
+bastion / no public access. See [infra/README.md](infra/README.md).
 
 ## Repo map
 
@@ -163,11 +228,18 @@ ai-powered-app/
 │   ├── run.py                        Tier 2 / Tier 3 runner
 │   └── judge.py                      LLM-as-judge with structured-output rubric
 ├── scripts/                          Build pipeline (run once after clone)
-│   ├── build_db.py                   CSVs → DuckDB + synthetic listings/leads
+│   ├── migrations/*.sql              MySQL schema migrations (numbered)
+│   ├── migrate_mysql.py              Apply pending migrations
+│   ├── build_mysql.py                CSVs → MySQL (OLTP source of truth)
+│   ├── etl_mysql_to_duckdb.py        MySQL → DuckDB pipeline (analytics)
+│   ├── seed_all.py                   One-shot: migrate + build + ETL
+│   ├── build_db.py                   Legacy DuckDB-only build (CI fallback)
 │   ├── train_model.py                RandomForest training
 │   ├── stage_regulation_corpus.py    Writes 20 NSW regulation .md files
 │   ├── build_regulation_corpus.py    Chunks + embeds via Azure
 │   └── build_review_embeddings.py    Embeds 421 suburb cards
+├── infra/                            Terraform — VPC + RDS MySQL + Secrets + seed ECS task (Phase 2 step 0)
+├── docker-compose.yml                MySQL 8 for local dev
 ├── misc/                             Kaggle CSVs + notebooks (read-only)
 ├── data/                             Built artefacts (gitignored except docs/)
 └── .github/workflows/                evals-smoke.yml (Tier 3 PR gate)
@@ -190,10 +262,13 @@ TAVILY_API_KEY=<get a free one at tavily.com>
 Then:
 
 ```powershell
-# One-time: build data + model + embeddings
+# 0) MySQL (OLTP). Boots in ~5s; defaults in docker-compose match .env.example.
+docker compose up -d mysql
+
+# 1) One-time: seed MySQL, then ETL into DuckDB, train model + embeddings.
 cd backend
 uv sync
-uv run python ../scripts/build_db.py
+uv run python ../scripts/seed_all.py            # migrate + build_mysql + ETL → DuckDB
 uv run python ../scripts/train_model.py
 uv run python ../scripts/stage_regulation_corpus.py
 uv run python ../scripts/build_regulation_corpus.py
