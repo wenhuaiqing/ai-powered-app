@@ -25,20 +25,71 @@ const DEFAULTS = {
 export default function Valuations() {
   const { t } = useTheme();
   const [tab, setTab] = useState("predictor");
+  const [info, setInfo] = useState(null);
+
+  // Fetch model metadata once at the top level so both tabs can share it
+  // (subtitle range banner here, full metrics + importance + residuals in
+  // ModelExplorer).
+  useEffect(() => {
+    let cancelled = false;
+    api("/api/valuations/model-info")
+      .then((d) => { if (!cancelled) setInfo(d); })
+      .catch(() => { /* page still renders if model-info fails */ });
+    return () => { cancelled = true; };
+  }, []);
+
+  const range = info?.data_range;
+  const metrics = info?.metrics;
+
+  // Subtitle: row count + headline metrics. Year range deliberately omitted
+  // here — it's surfaced in the yellow DataRangeBanner below the header.
+  const subtitleParts = [];
+  if (metrics?.n_train) subtitleParts.push(`${fmtInt(metrics.n_train + (metrics.n_test || 0))} NSW sales`);
+  if (metrics?.mae_aud) subtitleParts.push(`MAE ${fmtAud(metrics.mae_aud, { short: true })}`);
+  if (metrics?.r2 != null) subtitleParts.push(`R² ${Number(metrics.r2).toFixed(3)}`);
+  const subtitle = subtitleParts.length
+    ? `RandomForest trained on ${subtitleParts.join(" · ")}.`
+    : "RandomForest trained on the bundled NSW sales dataset.";
+
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
       <header>
         <h1 style={{ margin: "0 0 6px", fontSize: 20, fontWeight: 700, color: t.text, letterSpacing: "-0.01em" }}>
           Valuations
         </h1>
-        <p style={{ margin: 0, fontSize: 13, color: t.textMuted }}>
-          RandomForest trained on 11,049 NSW sales (MAE ≈ $270k, R² ≈ 0.745).
-        </p>
+        <p style={{ margin: 0, fontSize: 13, color: t.textMuted }}>{subtitle}</p>
       </header>
+
+      <DataRangeBanner t={t} range={range} />
 
       <Tabs t={t} value={tab} onChange={setTab} />
 
-      {tab === "predictor" ? <Predictor t={t} /> : <ModelExplorer t={t} />}
+      {tab === "predictor"
+        ? <Predictor t={t} range={range} />
+        : <ModelExplorer t={t} info={info} />}
+    </div>
+  );
+}
+
+function DataRangeBanner({ t, range }) {
+  if (!range?.earliest_year) return null;
+  const span = range.earliest_year === range.latest_year
+    ? `${range.earliest_year}`
+    : `${range.earliest_year} – ${range.latest_year}`;
+  return (
+    <div style={{
+      padding: "10px 14px",
+      fontSize: 12,
+      color: t.textMuted,
+      background: t.dotGlow.yellow,
+      border: `1px solid ${t.dot.yellow}`,
+      borderRadius: 8,
+      lineHeight: 1.55,
+    }}>
+      <strong style={{ color: t.dot.yellow, fontWeight: 700 }}>Data note:</strong>{" "}
+      Model trained on Domain sales from <strong style={{ color: t.text }}>{span}</strong>.
+      Predicted prices reflect that period and don't account for any market
+      movements since.
     </div>
   );
 }
@@ -83,7 +134,7 @@ function Tabs({ t, value, onChange }) {
 
 /* ============================== Predictor ============================== */
 
-function Predictor({ t }) {
+function Predictor({ t, range }) {
   const isMobile = useIsMobile();
   const [form, setForm] = useState(DEFAULTS);
   const [result, setResult] = useState(null);
@@ -213,7 +264,7 @@ function Predictor({ t }) {
         {!result && !error && !loading && (
           <EmptyHint t={t} />
         )}
-        {result && <ResultBlock t={t} result={result} />}
+        {result && <ResultBlock t={t} result={result} range={range} />}
       </div>
     </div>
   );
@@ -236,8 +287,13 @@ function EmptyHint({ t }) {
   );
 }
 
-function ResultBlock({ t, result }) {
+function ResultBlock({ t, result, range }) {
   const ci = result.confidence_interval || [0, 0];
+  const span = range?.earliest_year && range?.latest_year
+    ? (range.earliest_year === range.latest_year
+        ? `${range.earliest_year}`
+        : `${range.earliest_year}–${range.latest_year}`)
+    : null;
   return (
     <>
       <div style={{
@@ -256,6 +312,11 @@ function ResultBlock({ t, result }) {
         <div style={{ fontSize: 12, color: t.textMuted, marginTop: 6 }}>
           80% interval {fmtAud(ci[0])} – {fmtAud(ci[1])}
         </div>
+        {span && (
+          <div style={{ fontSize: 11, color: t.textMuted, marginTop: 8, fontStyle: "italic" }}>
+            Based on {span} sales — not adjusted for market movement since.
+          </div>
+        )}
       </div>
 
       <ContributionsChart t={t} contributions={result.contributions || []} />
@@ -319,19 +380,12 @@ function ContributionsChart({ t, contributions }) {
 
 /* ============================== Model Explorer ============================== */
 
-function ModelExplorer({ t }) {
-  const [info, setInfo] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    api("/api/valuations/model-info")
-      .then((d)  => { if (!cancelled) setInfo(d); })
-      .catch((e) => { if (!cancelled) setError(String(e?.message || e)); })
-      .finally(()=> { if (!cancelled) setLoading(false); });
-    return () => { cancelled = true; };
-  }, []);
+function ModelExplorer({ t, info }) {
+  // info is fetched at the top-level Valuations component and passed in.
+  // While it's null we show a tiny loading note; the subtitle has already
+  // appeared so the page doesn't feel blank.
+  const loading = info == null;
+  const error = null;
 
   if (loading) return <div style={{ color: t.textMuted, fontSize: 13 }}>Loading model info…</div>;
   if (error) return (
