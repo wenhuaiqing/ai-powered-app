@@ -1,17 +1,18 @@
-// Tiny SSR-safe media-query hook. `isMobile` is true at <=1024px so tablets
-// collapse to the mobile shell, per the Phase-A spec.
+// Tiny SSR-safe media-query hook + scroll-direction hook.
+//
+// `useIsMobile()` reads from ViewportContext so a user can manually override
+// the auto-detected breakpoint (the "Mobile view" toggle on desktop and the
+// "Desktop view" toggle in MobileNav). Auto-detect breakpoint is <=1024px so
+// tablets collapse to the mobile shell.
 
 import { useEffect, useState } from "react";
-
-const MOBILE_QUERY = "(max-width: 1024px)";
-
-function matchSafe(query) {
-  if (typeof window === "undefined" || !window.matchMedia) return false;
-  return window.matchMedia(query).matches;
-}
+import { useViewport } from "../context/ViewportContext.jsx";
 
 export function useMediaQuery(query) {
-  const [matches, setMatches] = useState(() => matchSafe(query));
+  const [matches, setMatches] = useState(() => {
+    if (typeof window === "undefined" || !window.matchMedia) return false;
+    return window.matchMedia(query).matches;
+  });
   useEffect(() => {
     if (typeof window === "undefined" || !window.matchMedia) return;
     const mql = window.matchMedia(query);
@@ -29,7 +30,8 @@ export function useMediaQuery(query) {
 }
 
 export function useIsMobile() {
-  return useMediaQuery(MOBILE_QUERY);
+  const ctx = useViewport();
+  return ctx?.isMobile ?? false;
 }
 
 // Track an element's scroll direction so a docked bar can auto-hide on
