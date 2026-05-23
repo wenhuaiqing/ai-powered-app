@@ -12,6 +12,7 @@ import pytest
 from src.app.services.agents.nodes import (
     compliance,
     data_query,
+    general,
     lead_triage,
     listing,
     market_watch,
@@ -21,6 +22,7 @@ from src.app.services.agents.nodes import (
 from src.app.services.agents.schemas import (
     ComplianceResult,
     DataQueryResult,
+    GeneralResult,
     GraphState,
     LeadTriageResult,
     ListingDraft,
@@ -107,6 +109,16 @@ async def test_market_watch_returns_typed_result(base_state):
     result = await market_watch.run(state, {})
     assert isinstance(result, MarketWatchResult)
     assert result.query_used
+
+
+@pytest.mark.asyncio
+async def test_general_returns_typed_result(base_state):
+    state = base_state.model_copy(update={"user_message": "How does this app work?"})
+    result = await general.run(state, {})
+    assert isinstance(result, GeneralResult)
+    assert result.answer
+    assert result.confidence in {"low", "medium", "high"}
+    assert isinstance(result.suggested_followups, list)
 
 
 @pytest.mark.asyncio

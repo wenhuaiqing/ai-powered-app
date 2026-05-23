@@ -1,0 +1,8 @@
+id: general-greeting
+description: Casual greeting falls through to the General agent. Used to validate planner never returns an empty agents_to_call list.
+prompt: "Hi there!"
+expected_agents:
+  - general
+expected_facts: []
+anti_facts: []
+tier3: false

@@ -19,6 +19,7 @@ AgentName = Literal[
     "listing",
     "lead_triage",
     "market_watch",
+    "general",
 ]
 
 
@@ -161,6 +162,21 @@ class MarketWatchResult(BaseModel):
     query_used: str
 
 
+class GeneralResult(BaseModel):
+    """Catch-all chat agent for anything outside the 7 specialist niches.
+
+    Routes here for app questions ("how does this work?"), general
+    real-estate chat with no clear specialist fit, casual greetings,
+    and onboarding queries. Confidence + suggested_followups help the
+    user discover specialist agents that would do better.
+    """
+    model_config = ConfigDict(extra="forbid")
+
+    answer: str
+    confidence: Literal["low", "medium", "high"] = "medium"
+    suggested_followups: list[str] = Field(default_factory=list)
+
+
 class NodeError(BaseModel):
     node: AgentName | Literal["planner", "summariser"]
     message: str
@@ -191,6 +207,7 @@ class GraphState(BaseModel):
     listing_draft: ListingDraft | None = None
     lead_triage_result: LeadTriageResult | None = None
     market_watch_result: MarketWatchResult | None = None
+    general_result: GeneralResult | None = None
     final_message: str | None = None
     errors: list[NodeError] = Field(default_factory=list)
 

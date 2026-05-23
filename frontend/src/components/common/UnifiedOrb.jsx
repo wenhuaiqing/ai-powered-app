@@ -103,9 +103,14 @@ export default function UnifiedOrb({ dockedHidden = false } = {}) {
 
   useEffect(() => { ensureKeyframes(); }, []);
 
+  // Scroll the conversation to the bottom on:
+  //   - new messages / running flips (existing behaviour)
+  //   - panel opens (desktop) or sheet expands (mobile) — so reopening
+  //     Rai always lands on the latest turn, not the first conversation
+  //     in the persisted history (chat convention: ChatGPT/WhatsApp/etc.).
   useEffect(() => {
     if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-  }, [messages, running]);
+  }, [messages, running, open, mobileExpanded]);
 
   // Persist the conversation to sessionStorage on every change. Cheap —
   // typical sessions are a handful of messages.

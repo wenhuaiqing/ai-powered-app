@@ -68,6 +68,12 @@ export default function Dashboard() {
           orchestration, RAG over NSW regulations, text-to-DuckDB, live web search
           via Tavily, and a RandomForest valuation model. Say hi to
           <strong style={{ color: t.text }}> Rai</strong>, the co-pilot bottom-right.
+          {" "}
+          The mobile layout is{" "}
+          <strong style={{ color: t.text }}>Rai-first</strong>: Rai becomes the
+          homepage, with a docked input bar on every module page. Try it by
+          tapping <strong style={{ color: t.text }}>Mobile view</strong> in the
+          header, resizing your browser to ≤1024px, or opening this URL on a phone.
         </p>
       </div>
 

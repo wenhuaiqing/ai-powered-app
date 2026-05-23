@@ -49,6 +49,11 @@ Agents and their inputs:
     inputs_json: {"lead_id": "<id>"} or {"lead": {...full lead dict...}}
 - market_watch: Live web search.
     inputs_json: {"query": "<focused search query>"}
+- general: Catch-all chat fallback (background agent — don't surface it
+  unprompted). Use for greetings, "what can you do?" / "how does this
+  work?" platform questions, or any property-related chat that doesn't
+  cleanly fit one of the specialists above.
+    inputs_json: {"question": "<the user's question>"}
 
 Rules:
 - Return strict JSON matching the PlannerDecision schema.
@@ -56,8 +61,8 @@ Rules:
   "{\\"min_bed\\": 3, \\"max_price\\": 1500000}"
 - If a field is unknown, omit it. Never invent a suburb or price.
 - Pick the smallest set of agents that gets the job done.
-- If the user is just chatting (no clear intent), return an empty
-  agents_to_call list.
+- NEVER return an empty agents_to_call list. If nothing else fits,
+  route to `general`.
 """
 
 
@@ -92,7 +97,9 @@ def _heuristic_decision(message: str) -> PlannerDecision:
         if any(_matches(kw, message) for kw in keywords) and agent not in chosen:
             chosen.append(agent)
     if not chosen:
-        chosen = ["data_query"]  # safe default: try to answer from local data
+        # No specialist matched — fall through to the general chat agent
+        # so the user always gets *some* useful response.
+        chosen = ["general"]
     return PlannerDecision(
         agents_to_call=[AgentCall(name=name, reasoning="heuristic match") for name in chosen],
         reasoning="No LLM available; routed by keyword heuristic.",

@@ -50,7 +50,15 @@ def test_no_double_agent_for_same_keyword():
     assert names.count("compliance") == 1
 
 
-def test_unknown_prompt_defaults_to_data_query():
+def test_unknown_prompt_defaults_to_general():
+    # Casual chit-chat / no specialist keyword -> falls through to the
+    # general chat agent so the user always gets some useful response.
     decision = _heuristic_decision("hello there")
     chosen = [c.name for c in decision.agents_to_call]
-    assert chosen == ["data_query"]
+    assert chosen == ["general"]
+
+
+def test_platform_question_routes_to_general():
+    decision = _heuristic_decision("How does this app work?")
+    chosen = [c.name for c in decision.agents_to_call]
+    assert chosen == ["general"]
