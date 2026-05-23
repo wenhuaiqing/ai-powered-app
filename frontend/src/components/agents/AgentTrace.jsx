@@ -191,6 +191,16 @@ function renderResultSummary(name, result, t) {
         </span>
       );
     }
+    case "general": {
+      const f = result.suggested_followups || [];
+      return (
+        <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+          <span style={strong}>chat</span> {sep}
+          <span style={muted}>{result.confidence || "medium"} confidence</span>
+          {f.length > 0 && <>{sep}<span style={muted}>{f.length} follow-up{f.length === 1 ? "" : "s"}</span></>}
+        </span>
+      );
+    }
     case "planner":
     case "summariser":
     default:

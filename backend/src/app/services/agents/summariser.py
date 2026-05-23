@@ -43,6 +43,8 @@ def _used_agents(state: GraphState) -> list[AgentName]:
         used.append("lead_triage")
     if state.market_watch_result is not None:
         used.append("market_watch")
+    if state.general_result is not None:
+        used.append("general")
     return used
 
 
@@ -55,6 +57,8 @@ def _fallback_summary(state: GraphState, agents: list[AgentName]) -> str:
     parts = []
     if state.compliance_result:
         parts.append(state.compliance_result.answer)
+    if state.general_result:
+        parts.append(state.general_result.answer)
     if state.market_watch_result:
         parts.append(state.market_watch_result.answer)
     if state.valuation_result:
@@ -90,6 +94,7 @@ async def summarise(state: GraphState) -> FinalMessage:
         "listing": state.listing_draft.model_dump() if state.listing_draft else None,
         "lead_triage": state.lead_triage_result.model_dump() if state.lead_triage_result else None,
         "market_watch": state.market_watch_result.model_dump() if state.market_watch_result else None,
+        "general": state.general_result.model_dump() if state.general_result else None,
         "errors": [e.model_dump() for e in state.errors],
     }
 

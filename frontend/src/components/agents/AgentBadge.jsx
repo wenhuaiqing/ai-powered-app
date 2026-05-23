@@ -9,6 +9,7 @@ const LABELS = {
   listing:      "Listing",
   lead_triage:  "Lead Triage",
   market_watch: "Market Watch",
+  general:      "General",
   summariser:   "Summariser",
   graph:        "Graph",
 };
