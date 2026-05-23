@@ -9,9 +9,11 @@ import {
 import { CircleMarker, MapContainer, Popup, TileLayer } from "react-leaflet";
 import { useTheme } from "../../context/ThemeContext.jsx";
 import { api, fmtAud, fmtInt } from "../../lib/api.js";
+import { useIsMobile } from "../../lib/useMediaQuery.js";
 
 export default function MarketInsights() {
   const { t } = useTheme();
+  const isMobile = useIsMobile();
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -53,7 +55,13 @@ export default function MarketInsights() {
 
       {data && (
         <>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(340px, 1fr))", gap: 12 }}>
+          <div style={{
+            display: "grid",
+            // Drop the 340px min on mobile so charts go single-column without
+            // forcing horizontal overflow on phones.
+            gridTemplateColumns: isMobile ? "1fr" : "repeat(auto-fit, minmax(340px, 1fr))",
+            gap: 12,
+          }}>
             <Card t={t} title="Price distribution (≤$5M)">
               <PriceDistribution t={t} bins={data.dist.bins} />
             </Card>
@@ -69,7 +77,7 @@ export default function MarketInsights() {
           </div>
 
           <Card t={t} title="Suburb median price (bubble map)">
-            <SuburbMap t={t} suburbs={data.map.suburbs} />
+            <SuburbMap t={t} suburbs={data.map.suburbs} isMobile={isMobile} />
           </Card>
         </>
       )}
@@ -202,7 +210,7 @@ function TopSuburbs({ t, suburbs }) {
   );
 }
 
-function SuburbMap({ t, suburbs }) {
+function SuburbMap({ t, suburbs, isMobile }) {
   const prices = suburbs.map((s) => s.median_price).filter((p) => p > 0);
   const min = Math.min(...prices);
   const max = Math.max(...prices);
@@ -211,7 +219,7 @@ function SuburbMap({ t, suburbs }) {
     return 4 + ((p - min) / (max - min)) * 20;
   };
   return (
-    <div style={{ height: 360, overflow: "hidden", borderRadius: 8, border: `1px solid ${t.border}` }}>
+    <div style={{ height: isMobile ? 280 : 360, overflow: "hidden", borderRadius: 8, border: `1px solid ${t.border}` }}>
       <MapContainer center={[-33.86, 151.13]} zoom={10} style={{ height: "100%", width: "100%" }} scrollWheelZoom>
         <TileLayer
           attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'

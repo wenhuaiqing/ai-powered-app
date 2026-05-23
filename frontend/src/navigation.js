@@ -39,9 +39,12 @@ export function getRoutes() {
     const section = match[1];
     const file = match[2];
 
-    // Home/Dashboard.jsx is the index route at "/".
-    const isHome = section === "Home" && /dashboard/i.test(file);
-    const to = isHome ? "/" : `/${slugify(section)}`;
+    // Dashboard lives at /dashboard everywhere (consistent with the other
+    // modules). The bare "/" route is reserved for the Rai full-page
+    // homepage on mobile and redirects to /dashboard on desktop — both
+    // handled in App.jsx. Other sections use their folder name as the slug.
+    const slug = section === "Home" ? "dashboard" : slugify(section);
+    const to = `/${slug}`;
 
     const meta = MODULE_META[section] || { label: titleFromName(file), order: 99 };
     routes.push({

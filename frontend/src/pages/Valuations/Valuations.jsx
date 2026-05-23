@@ -10,6 +10,7 @@ import {
 import { Calculator, LineChart as LineIcon, Sparkles } from "lucide-react";
 import { useTheme } from "../../context/ThemeContext.jsx";
 import { api, fmtAud, fmtInt } from "../../lib/api.js";
+import { useIsMobile } from "../../lib/useMediaQuery.js";
 
 const DEFAULTS = {
   num_bed: 3,
@@ -82,6 +83,7 @@ function Tabs({ t, value, onChange }) {
 /* ============================== Predictor ============================== */
 
 function Predictor({ t }) {
+  const isMobile = useIsMobile();
   const [form, setForm] = useState(DEFAULTS);
   const [result, setResult] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -109,7 +111,11 @@ function Predictor({ t }) {
   };
 
   return (
-    <div style={{ display: "grid", gridTemplateColumns: "minmax(280px, 360px) 1fr", gap: 18 }}>
+    <div style={{
+      display: "grid",
+      gridTemplateColumns: isMobile ? "1fr" : "minmax(280px, 360px) 1fr",
+      gap: 18,
+    }}>
       {/* Form */}
       <form
         onSubmit={submit}

@@ -7,6 +7,7 @@ import Drawer from "../../components/common/Drawer.jsx";
 import { useOrb } from "../../context/OrbContext.jsx";
 import { useTheme } from "../../context/ThemeContext.jsx";
 import { api, fmtAud, fmtDate, fmtInt } from "../../lib/api.js";
+import { useIsMobile } from "../../lib/useMediaQuery.js";
 
 const FILTERS = [
   { key: "all",      label: "All" },
@@ -17,6 +18,7 @@ const FILTERS = [
 export default function Properties() {
   const { t } = useTheme();
   const orb = useOrb();
+  const isMobile = useIsMobile();
   const [filter, setFilter] = useState("all");
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -54,7 +56,9 @@ export default function Properties() {
       {loading && <Skeleton t={t} />}
       {error && <ErrorBox t={t}>{error}</ErrorBox>}
       {!loading && !error && (
-        <Table items={items} t={t} onRowClick={(id) => setSelectedId(id)} />
+        isMobile
+          ? <CardList items={items} t={t} onRowClick={(id) => setSelectedId(id)} />
+          : <Table    items={items} t={t} onRowClick={(id) => setSelectedId(id)} />
       )}
 
       <Drawer
@@ -140,6 +144,90 @@ const stageColors = (t) => ({
   "Under Offer": t.dot.yellow,
   "Sold":        t.textMuted,
 });
+
+// Mobile-only: render each property as a vertical card. The desktop
+// table doesn't fit on a phone; column headers are baked into the card
+// content instead.
+function CardList({ items, t, onRowClick }) {
+  const stageColor = stageColors(t);
+  if (items.length === 0) {
+    return (
+      <div style={{
+        padding: "16px 14px",
+        background: t.surface,
+        border: `1px solid ${t.border}`,
+        borderRadius: 12,
+        color: t.textMuted,
+        fontSize: 13,
+      }}>
+        No properties match this filter.
+      </div>
+    );
+  }
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+      {items.map((it) => (
+        <button
+          key={it.listing_id}
+          onClick={() => onRowClick(it.listing_id)}
+          style={{
+            display: "flex",
+            flexDirection: "column",
+            gap: 8,
+            padding: "12px 14px",
+            background: t.surface,
+            border: `1px solid ${t.border}`,
+            borderRadius: 12,
+            cursor: "pointer",
+            textAlign: "left",
+            font: "inherit",
+            color: t.text,
+            transition: "border-color .15s, transform .12s",
+          }}
+          onMouseEnter={(e) => (e.currentTarget.style.borderColor = t.accent)}
+          onMouseLeave={(e) => (e.currentTarget.style.borderColor = t.border)}
+        >
+          {/* Top row: suburb / region · status pill */}
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <div style={{ flex: 1, minWidth: 0, lineHeight: 1.25 }}>
+              <div style={{ fontSize: 15, fontWeight: 600, color: t.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                {it.suburb}
+              </div>
+              <div style={{ fontSize: 11, color: t.textMuted }}>{it.region || "—"}</div>
+            </div>
+            <span style={{
+              fontSize: 10, fontWeight: 700, letterSpacing: "0.06em", textTransform: "uppercase",
+              padding: "2px 7px", borderRadius: 4, flexShrink: 0,
+              background: "transparent",
+              color: stageColor[it.stage] || t.textMuted,
+              border: `1px solid ${stageColor[it.stage] || t.border}`,
+            }}>{it.stage}</span>
+          </div>
+
+          {/* Middle row: bed / bath / size / km · big price */}
+          <div style={{ display: "flex", alignItems: "flex-end", gap: 12 }}>
+            <div style={{ flex: 1, display: "flex", flexWrap: "wrap", gap: "4px 10px", fontSize: 12, color: t.textMuted }}>
+              <span style={{ color: t.text }}>{it.num_bed} bed · {it.num_bath} bath</span>
+              {it.property_size != null && <span>{it.property_size} sqm</span>}
+              {it.km_from_cbd != null && <span>{Math.round(it.km_from_cbd)} km CBD</span>}
+              {it.type && <span>{it.type}</span>}
+            </div>
+            <div style={{ fontSize: 16, fontWeight: 700, color: t.text, letterSpacing: "-0.01em" }}>
+              {fmtAud(it.asking_price, { short: true })}
+            </div>
+          </div>
+
+          {/* Footer row: status + agent + days on market */}
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 11, color: t.textMuted }}>
+            <span>{it.status}{it.agent_name ? ` · ${it.agent_name}` : ""}</span>
+            <span>{it.days_on_market} d</span>
+          </div>
+        </button>
+      ))}
+    </div>
+  );
+}
+
 
 function Table({ items, t, onRowClick }) {
   const stageColor = stageColors(t);
