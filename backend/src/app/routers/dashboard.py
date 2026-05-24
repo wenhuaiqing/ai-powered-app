@@ -61,5 +61,8 @@ async def recent_runs(limit: int = Query(15, ge=1, le=50)) -> dict[str, Any]:
                 item["agents_called"] = []
         item["used_web_search"] = bool(item.get("used_web_search"))
         if item.get("created_at"):
-            item["created_at"] = item["created_at"].isoformat()
+            # MySQL DATETIME has no timezone; the server runs in UTC, so we
+            # mark the string as UTC. The browser then converts to local
+            # time when computing "Xm ago".
+            item["created_at"] = item["created_at"].isoformat() + "Z"
     return {"items": items, "count": len(items)}
