@@ -81,19 +81,25 @@ def load_properties() -> pd.DataFrame:
     df = df.dropna(subset=["price", "suburb"]).reset_index(drop=True)
     df["property_id"] = [f"P{idx:05d}" for idx in range(len(df))]
     out = pd.DataFrame({
-        "property_id":   df["property_id"],
-        "suburb":        df["suburb"].astype(str),
-        "postcode":      df.get("postcode"),
-        "price":         df["price"],
-        "property_type": df.get("type"),
-        "num_bed":       df.get("num_bed"),
-        "num_bath":      df.get("num_bath"),
-        "num_parking":   df.get("num_parking"),
-        "property_size": df["property_size"],
-        "km_from_cbd":   df.get("km_from_cbd"),
-        "suburb_lat":    df.get("suburb_lat"),
-        "suburb_lng":    df.get("suburb_lng"),
-        "date_sold":     df["date_sold"].dt.date,
+        "property_id":              df["property_id"],
+        "suburb":                   df["suburb"].astype(str),
+        "postcode":                 df.get("postcode"),
+        "price":                    df["price"],
+        "property_type":            df.get("type"),
+        "num_bed":                  df.get("num_bed"),
+        "num_bath":                 df.get("num_bath"),
+        "num_parking":              df.get("num_parking"),
+        "property_size":            df["property_size"],
+        "suburb_population":        df.get("suburb_population"),
+        "suburb_median_income":     df.get("suburb_median_income"),
+        "suburb_sqkm":              df.get("suburb_sqkm"),
+        "suburb_elevation":         df.get("suburb_elevation"),
+        "cash_rate":                df.get("cash_rate"),
+        "property_inflation_index": df.get("property_inflation_index"),
+        "km_from_cbd":              df.get("km_from_cbd"),
+        "suburb_lat":               df.get("suburb_lat"),
+        "suburb_lng":               df.get("suburb_lng"),
+        "date_sold":                df["date_sold"].dt.date,
     })
     return out
 

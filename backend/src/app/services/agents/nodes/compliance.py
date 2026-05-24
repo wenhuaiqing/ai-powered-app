@@ -21,7 +21,7 @@ from src.app.services.agents.schemas import (
     ComplianceResult,
     GraphState,
 )
-from src.app.services.ai_client import chat_model, get_openai_client
+from src.app.services.llm import chat_structured
 from src.app.services.rag.regulations import retrieve
 from src.app.services.tools.web_search import web_search
 from src.settings import settings
@@ -123,19 +123,14 @@ async def run(state: GraphState, inputs: dict[str, Any]) -> ComplianceResult:
     )
 
     try:
-        client = get_openai_client()
-        completion = client.beta.chat.completions.parse(
-            model=chat_model(),
+        parsed = chat_structured(
             messages=[
                 {"role": "system", "content": SYSTEM_PROMPT},
                 {"role": "user", "content": user_payload},
             ],
-            response_format=ComplianceResult,
+            response_model=ComplianceResult,
             temperature=0.1,
         )
-        parsed = completion.choices[0].message.parsed
-        if parsed is None:
-            raise ValueError("compliance LLM returned no parsed payload")
         # Ensure we don't lose the actual retrieved citations if the LLM omits them
         if not parsed.citations:
             parsed.citations = local_hits
