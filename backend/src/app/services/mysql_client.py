@@ -7,8 +7,10 @@ concurrent SSE handlers, not high-throughput.
 
 from __future__ import annotations
 
+import datetime as _dt
 import logging
 from contextlib import contextmanager
+from decimal import Decimal
 from functools import lru_cache
 from typing import Any, Iterator, Mapping, Sequence
 
@@ -73,5 +75,21 @@ def execute(
         return int(result.lastrowid or 0)
 
 
+def _coerce(value: Any) -> Any:
+    """Normalise types at the API boundary.
+
+    MySQL DECIMAL columns surface as `decimal.Decimal`, which FastAPI's
+    default JSON encoder serialises as the string "718832.00". The
+    matcher / valuation agents then call `int()` on those strings and
+    blow up. Convert to native float here so downstream code (agents,
+    frontend JSON) gets a number.
+    """
+    if isinstance(value, Decimal):
+        return float(value)
+    if isinstance(value, (_dt.date, _dt.datetime)):
+        return value.isoformat()
+    return value
+
+
 def rows_to_dicts(cols: list[str], rows: list[list[Any]]) -> list[dict[str, Any]]:
-    return [dict(zip(cols, r)) for r in rows]
+    return [{c: _coerce(v) for c, v in zip(cols, r)} for r in rows]
