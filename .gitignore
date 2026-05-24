@@ -49,3 +49,11 @@ evals/results/*
 # OS
 Thumbs.db
 .DS_Store
+
+# Terraform local state + plugin cache.
+# State files contain secrets (the random RDS password). Never commit.
+infra/.terraform/
+infra/terraform.tfstate
+infra/terraform.tfstate.*
+infra/*.tfplan
+infra/.terraform.tfstate.lock.info
