@@ -2,10 +2,9 @@
 # provisioned RDS the first time, and on demand whenever the source CSVs
 # change. Triggered manually via `aws ecs run-task` (see infra/README.md).
 #
-# The task definition references var.seed_image_uri. Until Phase 2 step 2
-# publishes the backend image to ECR, this remains an empty string and
-# the task definition is skipped (count = 0). Apply this whole module
-# first to stand up the database; revisit once an image exists.
+# Reuses the backend ECR image (the seed scripts are baked in alongside
+# the FastAPI app under scripts/). When `var.seed_image_uri` is empty
+# (the default), we default to the backend repo's :latest tag.
 
 resource "aws_ecs_cluster" "main" {
   name = local.name
@@ -16,8 +15,11 @@ resource "aws_cloudwatch_log_group" "seed" {
   retention_in_days = 30
 }
 
+locals {
+  seed_image = var.seed_image_uri != "" ? var.seed_image_uri : "${aws_ecr_repository.backend.repository_url}:latest"
+}
+
 resource "aws_ecs_task_definition" "seed" {
-  count                    = var.seed_image_uri == "" ? 0 : 1
   family                   = "${local.name}-seed"
   network_mode             = "awsvpc"
   requires_compatibilities = ["FARGATE"]
@@ -28,8 +30,10 @@ resource "aws_ecs_task_definition" "seed" {
 
   container_definitions = jsonencode([{
     name      = "seed"
-    image     = var.seed_image_uri
+    image     = local.seed_image
     essential = true
+    # Run from /app (where misc/ + scripts/ live), not /app/backend.
+    workingDirectory = "/app"
     command   = ["python", "scripts/seed_all.py"]
     environment = [
       { name = "MYSQL_HOST",     value = aws_db_instance.mysql.address },

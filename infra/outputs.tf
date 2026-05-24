@@ -45,8 +45,7 @@ output "ecs_cluster_name" {
 }
 
 output "seed_task_family" {
-  value       = try(aws_ecs_task_definition.seed[0].family, "")
-  description = "Empty until var.seed_image_uri is set (after Phase 2 step 2)."
+  value = aws_ecs_task_definition.seed.family
 }
 
 output "execution_role_arn" {
