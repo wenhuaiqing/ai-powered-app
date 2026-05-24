@@ -24,7 +24,7 @@ from pydantic import BaseModel, Field
 
 from src.app.services.agents.runtime import emit
 from src.app.services.agents.schemas import DataQueryResult, GraphState
-from src.app.services.ai_client import chat_model, get_openai_client
+from src.app.services.llm import chat_structured
 from src.app.services.duckdb_client import describe_table, fetch_rows
 from src.app.services.sql_validator import ALLOWED_TABLES, validate
 from src.settings import settings
@@ -96,7 +96,6 @@ def _interpret_no_llm(question: str) -> _Draft:
 
 
 async def _ask_llm(question: str, retry_with: str | None = None) -> _Draft:
-    client = get_openai_client()
     messages: list[dict[str, str]] = [
         {"role": "system", "content": _system_prompt()},
         {"role": "user", "content": f"Question: {question}"},
@@ -109,22 +108,13 @@ async def _ask_llm(question: str, retry_with: str | None = None) -> _Draft:
                 f"{retry_with}. Generate a corrected query."
             ),
         })
-    completion = client.beta.chat.completions.parse(
-        model=chat_model(),
-        messages=messages,
-        response_format=_Draft,
-        temperature=0,
-    )
-    parsed = completion.choices[0].message.parsed
-    if parsed is None:
-        raise ValueError("data_query LLM returned no parsed payload")
-    return parsed
+    return chat_structured(messages=messages, response_model=_Draft, temperature=0)
 
 
 async def run(state: GraphState, inputs: dict[str, Any]) -> DataQueryResult:
     question = (inputs or {}).get("question") or state.user_message
 
-    if not settings.azure_openai_api_key:
+    if settings.llm_provider == "azure" and not settings.azure_openai_api_key:
         draft = _interpret_no_llm(question)
     else:
         try:

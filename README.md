@@ -113,8 +113,11 @@ three-tier eval suite with a CI gate.
 ```
 
 - **Backend**: FastAPI + LangGraph + Pydantic + DuckDB + MySQL (OLTP via
-  SQLAlchemy + PyMySQL) + scikit-learn + Azure OpenAI (`openai` SDK pointed
-  at the Azure v1 endpoint) + Tavily.
+  SQLAlchemy + PyMySQL) + scikit-learn + Tavily. LLM provider is a runtime
+  toggle (`LLM_PROVIDER=azure|bedrock`) — Azure OpenAI via the `openai` SDK
+  for dev, AWS Bedrock (Claude Sonnet 4.6 via boto3 `converse`) for the
+  AWS-native deploy. Static system prompts are cached on the Bedrock side
+  via `cachePoint` so repeat agent calls hit the prompt cache.
 - **Frontend**: React 18 + Vite 5 + React Router 7 + Recharts + Leaflet +
   `react-ai-orb` (custom PlasmaOrb visual) + lucide-react.
 - **AI contracts**: every node emits a typed Pydantic model. The graph state
@@ -340,6 +343,12 @@ The pieces that show this is more than a happy-path demo:
   Reapit AI SVG (`#4856EA` indigo, `#0BAAB2` teal, `#D1263D` red, `#FD9E1D`
   orange). Real Reapit favicon + RAI logo. Mobile View toggle pill has the
   same red sweep + heartbeat as the dashboard hint.
+- **Provider-agnostic LLM layer** — every agent calls `chat_structured(...)`
+  / `chat_text(...)` from `services/llm.py`, which dispatches to Azure
+  OpenAI or AWS Bedrock based on `LLM_PROVIDER`. The Bedrock path uses
+  `converse` with forced tool-use for structured outputs and appends a
+  `cachePoint` after the system blocks so the 50-150 line agent system
+  prompts get cached (5-min TTL) on the Bedrock side.
 
 ## Plan of record
 
