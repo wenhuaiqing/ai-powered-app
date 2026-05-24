@@ -31,8 +31,16 @@ class Settings(BaseSettings):
     azure_openai_embed_model: str = "text-embedding-3-small"
 
     # AWS Bedrock (only used when LLM_PROVIDER=bedrock).
+    # The model ID is a cross-region inference profile -- prefix tells
+    # Bedrock which geo to route through:
+    #   au. -> ap-southeast-2 (Sydney)
+    #   us. -> us-east-1 / us-west-2
+    #   eu. -> eu-* regions
+    # The bare ID `anthropic.claude-sonnet-4-6` is in-region only and
+    # may not be deployed in every region; the cross-region profile is
+    # the recommended default.
     aws_region: str = "ap-southeast-2"
-    bedrock_chat_model: str = "anthropic.claude-sonnet-4-6-20250930-v1:0"
+    bedrock_chat_model: str = "au.anthropic.claude-sonnet-4-6"
 
     # Tavily
     tavily_api_key: str = ""
