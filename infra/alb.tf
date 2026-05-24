@@ -41,7 +41,7 @@ resource "aws_security_group_rule" "app_ingress_from_alb_backend" {
   protocol                 = "tcp"
   source_security_group_id = aws_security_group.alb.id
   security_group_id        = aws_security_group.app.id
-  description              = "ALB -> backend tasks"
+  description              = "ALB to backend tasks"
 }
 
 resource "aws_security_group_rule" "app_ingress_from_alb_frontend" {
@@ -51,7 +51,7 @@ resource "aws_security_group_rule" "app_ingress_from_alb_frontend" {
   protocol                 = "tcp"
   source_security_group_id = aws_security_group.alb.id
   security_group_id        = aws_security_group.app.id
-  description              = "ALB -> frontend tasks (nginx)"
+  description              = "ALB to frontend tasks (nginx)"
 }
 
 resource "aws_lb" "main" {

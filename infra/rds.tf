@@ -10,7 +10,7 @@ resource "aws_db_subnet_group" "mysql" {
 
 resource "aws_security_group" "mysql" {
   name        = "${local.name}-mysql-sg"
-  description = "MySQL — inbound from app SG only"
+  description = "MySQL - inbound from app SG only"
   vpc_id      = aws_vpc.main.id
 
   ingress {
@@ -18,7 +18,7 @@ resource "aws_security_group" "mysql" {
     to_port         = 3306
     protocol        = "tcp"
     security_groups = [aws_security_group.app.id]
-    description     = "App tasks -> MySQL"
+    description     = "App tasks to MySQL"
   }
 
   egress {
@@ -45,7 +45,9 @@ resource "aws_db_instance" "mysql" {
   vpc_security_group_ids = [aws_security_group.mysql.id]
   publicly_accessible    = false
   multi_az               = false
-  backup_retention_period = 7
+  # AWS Free Tier blocks any backup retention -> set to 0. For a real
+  # deployment, bump this to 7 once you upgrade past free tier.
+  backup_retention_period = 0
   deletion_protection    = false   # demo
   skip_final_snapshot    = true    # demo
   apply_immediately      = true
