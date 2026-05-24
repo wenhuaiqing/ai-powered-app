@@ -73,7 +73,9 @@ resource "aws_ecs_task_definition" "backend" {
       interval    = 15
       timeout     = 5
       retries     = 4
-      startPeriod = 30
+      # Backend boots by running the MySQL -> DuckDB ETL before uvicorn
+      # starts; gives that ~60s of grace before health checks fail.
+      startPeriod = 90
     }
     logConfiguration = {
       logDriver = "awslogs"
