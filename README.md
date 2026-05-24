@@ -248,7 +248,7 @@ ai-powered-app/
 ├── docker-compose.yml                Full stack: MySQL + backend + frontend
 ├── misc/                             Kaggle CSVs + notebooks (read-only)
 ├── data/                             Built artefacts (gitignored except docs/)
-└── .github/workflows/                evals-smoke.yml (Tier 3 PR gate)
+└── .github/workflows/                evals-smoke.yml (Tier 3 PR gate) + deploy.yml (Phase 2 step 4)
 ```
 
 ## Run locally
@@ -317,6 +317,58 @@ The nginx container proxies `/api/*`, `/orb/*`, and `/health` to the
 backend service over the compose network, so the SPA is single-origin
 (no CORS round-trip) and SSE streams unbuffered (no `nginx` cache, no
 `X-Accel-Buffering`).
+
+## Deploy to AWS (Phase 2)
+
+End-to-end deploy in two phases — infrastructure (manual, one-time) and
+code (automated on every push to `main`).
+
+### Phase 2 step 3 — provision infrastructure (`terraform apply`)
+
+```bash
+# Pre-reqs: AWS account + `aws configure` locally + Bedrock model access
+# enabled in the AWS console for the target region.
+
+cd infra
+terraform init
+terraform apply -var "github_repository=<owner>/<repo>"
+# ~10 min (RDS provisioning is the slow part). Creates VPC, RDS,
+# Secrets Manager, ECR repos, ECS cluster + services, ALB, IAM roles,
+# GitHub OIDC trust. ~$77/mo while running.
+```
+
+### Phase 2 step 4 — wire GitHub Actions (one-time)
+
+Copy nine Terraform outputs into the repo's **Settings → Secrets and
+variables → Actions → Variables** tab. Exact commands in
+[infra/README.md](infra/README.md). After this, every push to `main`
+runs `.github/workflows/deploy.yml` — build images → push to ECR → roll
+ECS services. ~4 min per deploy. No static AWS keys ever stored in
+GitHub (OIDC federation).
+
+### Seed RDS the first time
+
+```bash
+aws ecs run-task \
+  --cluster $(terraform output -raw ecs_cluster_name) \
+  --task-definition $(terraform output -raw seed_task_family) \
+  --launch-type FARGATE \
+  --network-configuration "awsvpcConfiguration={subnets=[...], securityGroups=[...]}"
+```
+
+Reusable: re-run whenever the source CSVs change.
+
+### Get the URL
+
+```bash
+echo "http://$(terraform output -raw alb_dns_name)"
+```
+
+### Teardown
+
+```bash
+cd infra && terraform destroy   # ~5 min; zero ongoing cost
+```
 
 ## 5-minute demo script
 
