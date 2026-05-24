@@ -56,3 +56,41 @@ output "execution_role_arn" {
 output "task_role_arn" {
   value = aws_iam_role.task.arn
 }
+
+# ---- ALB + ECS service identifiers (consumed by the GitHub Action) ----
+
+output "alb_dns_name" {
+  value       = aws_lb.main.dns_name
+  description = "Public URL of the deployed app. Paste into a browser after the first deploy completes."
+}
+
+output "ecr_backend_repository_url" {
+  value = aws_ecr_repository.backend.repository_url
+}
+
+output "ecr_frontend_repository_url" {
+  value = aws_ecr_repository.frontend.repository_url
+}
+
+output "ecs_backend_service_name" {
+  value = aws_ecs_service.backend.name
+}
+
+output "ecs_frontend_service_name" {
+  value = aws_ecs_service.frontend.name
+}
+
+output "ecs_backend_task_family" {
+  value = aws_ecs_task_definition.backend.family
+}
+
+output "ecs_frontend_task_family" {
+  value = aws_ecs_task_definition.frontend.family
+}
+
+# ---- GitHub Actions OIDC ----
+
+output "github_actions_role_arn" {
+  value       = aws_iam_role.github_actions_deploy.arn
+  description = "Paste into the AWS_DEPLOY_ROLE_ARN GitHub Actions variable."
+}

@@ -64,9 +64,15 @@ variable "db_engine_version" {
 }
 
 variable "seed_image_uri" {
-  description = "Full ECR image URI for the backend (used by the seed ECS task). Empty until Phase 2 step 2 publishes the image."
+  description = "Full ECR image URI for the backend (used by the seed ECS task). Empty until the first GitHub Actions deploy pushes an image."
   type        = string
   default     = ""
+}
+
+variable "github_repository" {
+  description = "GitHub repo (e.g. owenwen/ai-powered-app) allowed to assume the deploy role via OIDC."
+  type        = string
+  default     = "owenwen/ai-powered-app"
 }
 
 locals {

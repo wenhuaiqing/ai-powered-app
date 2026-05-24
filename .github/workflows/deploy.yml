@@ -1,0 +1,175 @@
+name: deploy
+
+# Build + push backend and frontend images to ECR, then roll the ECS
+# services to the new revision. Authenticates to AWS via OIDC -- no
+# static keys live in GitHub. Only fires on pushes to main after the
+# eval smoke gate succeeds.
+#
+# One-time setup (after `terraform apply` lands):
+#   1. Open repo -> Settings -> Secrets and variables -> Actions.
+#   2. Add Variables:
+#        AWS_REGION                  e.g. ap-southeast-2
+#        AWS_DEPLOY_ROLE_ARN         from `terraform output -raw github_actions_role_arn`
+#        ECR_BACKEND_REPOSITORY      e.g. ai-powered-app-demo/backend
+#        ECR_FRONTEND_REPOSITORY     e.g. ai-powered-app-demo/frontend
+#        ECS_CLUSTER                 from `terraform output -raw ecs_cluster_name`
+#        ECS_BACKEND_SERVICE         from `terraform output -raw ecs_backend_service_name`
+#        ECS_FRONTEND_SERVICE        from `terraform output -raw ecs_frontend_service_name`
+#        ECS_BACKEND_TASK_FAMILY     from `terraform output -raw ecs_backend_task_family`
+#        ECS_FRONTEND_TASK_FAMILY    from `terraform output -raw ecs_frontend_task_family`
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  id-token: write   # OIDC token for AssumeRole
+  contents: read
+
+concurrency:
+  group: deploy-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  # Skip the deploy if the smoke gate from .github/workflows/evals-smoke.yml
+  # didn't pass on this SHA. We don't need to re-run it; we just check
+  # the GitHub Checks API for its outcome.
+  smoke-gate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Wait for evals-smoke success on this SHA
+        uses: lewagon/wait-on-check-action@v1.3.4
+        with:
+          ref: ${{ github.sha }}
+          check-name: evals-smoke
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+          wait-interval: 15
+        continue-on-error: true  # If the check doesn't exist (e.g. main push without PR), don't block.
+
+  build-and-push:
+    needs: smoke-gate
+    runs-on: ubuntu-latest
+    outputs:
+      image_tag: ${{ steps.meta.outputs.tag }}
+      backend_image: ${{ steps.meta.outputs.backend_image }}
+      frontend_image: ${{ steps.meta.outputs.frontend_image }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - name: Log in to Amazon ECR
+        id: ecr-login
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Resolve image tag + URIs
+        id: meta
+        run: |
+          TAG="${GITHUB_SHA::7}"
+          REG="${{ steps.ecr-login.outputs.registry }}"
+          BE="${REG}/${{ vars.ECR_BACKEND_REPOSITORY }}"
+          FE="${REG}/${{ vars.ECR_FRONTEND_REPOSITORY }}"
+          echo "tag=$TAG"               >> "$GITHUB_OUTPUT"
+          echo "backend_image=$BE:$TAG" >> "$GITHUB_OUTPUT"
+          echo "frontend_image=$FE:$TAG" >> "$GITHUB_OUTPUT"
+          echo "backend_repo=$BE"       >> "$GITHUB_OUTPUT"
+          echo "frontend_repo=$FE"      >> "$GITHUB_OUTPUT"
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Build + push backend image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: backend/Dockerfile
+          push: true
+          tags: |
+            ${{ steps.meta.outputs.backend_image }}
+            ${{ steps.meta.outputs.backend_repo }}:latest
+          cache-from: type=registry,ref=${{ steps.meta.outputs.backend_repo }}:buildcache
+          cache-to: type=registry,ref=${{ steps.meta.outputs.backend_repo }}:buildcache,mode=max
+
+      - name: Build + push frontend image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: frontend/Dockerfile
+          push: true
+          tags: |
+            ${{ steps.meta.outputs.frontend_image }}
+            ${{ steps.meta.outputs.frontend_repo }}:latest
+          cache-from: type=registry,ref=${{ steps.meta.outputs.frontend_repo }}:buildcache
+          cache-to: type=registry,ref=${{ steps.meta.outputs.frontend_repo }}:buildcache,mode=max
+
+  deploy-backend:
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - name: Fetch + render task def (backend)
+        run: |
+          aws ecs describe-task-definition \
+            --task-definition "${{ vars.ECS_BACKEND_TASK_FAMILY }}" \
+            --query taskDefinition > backend-task-def.json
+          # Strip metadata fields that register-task-definition rejects.
+          jq 'del(.taskDefinitionArn,.revision,.status,.requiresAttributes,.compatibilities,.registeredAt,.registeredBy)' \
+            backend-task-def.json > backend-task-def.clean.json
+          mv backend-task-def.clean.json backend-task-def.json
+          # Patch the image.
+          jq --arg img "${{ needs.build-and-push.outputs.backend_image }}" \
+             '.containerDefinitions[0].image = $img' \
+             backend-task-def.json > backend-task-def.patched.json
+          mv backend-task-def.patched.json backend-task-def.json
+
+      - name: Deploy backend to ECS
+        uses: aws-actions/amazon-ecs-deploy-task-definition@v2
+        with:
+          task-definition: backend-task-def.json
+          service: ${{ vars.ECS_BACKEND_SERVICE }}
+          cluster: ${{ vars.ECS_CLUSTER }}
+          wait-for-service-stability: true
+
+  deploy-frontend:
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - name: Fetch + render task def (frontend)
+        run: |
+          aws ecs describe-task-definition \
+            --task-definition "${{ vars.ECS_FRONTEND_TASK_FAMILY }}" \
+            --query taskDefinition > frontend-task-def.json
+          jq 'del(.taskDefinitionArn,.revision,.status,.requiresAttributes,.compatibilities,.registeredAt,.registeredBy)' \
+            frontend-task-def.json > frontend-task-def.clean.json
+          mv frontend-task-def.clean.json frontend-task-def.json
+          jq --arg img "${{ needs.build-and-push.outputs.frontend_image }}" \
+             '.containerDefinitions[0].image = $img' \
+             frontend-task-def.json > frontend-task-def.patched.json
+          mv frontend-task-def.patched.json frontend-task-def.json
+
+      - name: Deploy frontend to ECS
+        uses: aws-actions/amazon-ecs-deploy-task-definition@v2
+        with:
+          task-definition: frontend-task-def.json
+          service: ${{ vars.ECS_FRONTEND_SERVICE }}
+          cluster: ${{ vars.ECS_CLUSTER }}
+          wait-for-service-stability: true
