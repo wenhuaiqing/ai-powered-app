@@ -34,7 +34,13 @@ resource "aws_ecs_task_definition" "seed" {
     essential = true
     # Run from /app (where misc/ + scripts/ live), not /app/backend.
     workingDirectory = "/app"
-    command   = ["python", "scripts/seed_all.py"]
+    # ETL runs on backend startup instead (each Fargate task has its own
+    # ephemeral filesystem, so a seed-side DuckDB write wouldn't be
+    # visible to the backend task). Seed handles only the MySQL side.
+    command = [
+      "sh", "-c",
+      "python scripts/migrate_mysql.py && python scripts/build_mysql.py"
+    ]
     environment = [
       { name = "MYSQL_HOST",     value = aws_db_instance.mysql.address },
       { name = "MYSQL_PORT",     value = tostring(aws_db_instance.mysql.port) },
