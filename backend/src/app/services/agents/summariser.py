@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 
-from src.app.services.ai_client import chat_model, get_openai_client
+from src.app.services.llm import chat_text
 from src.app.services.agents.schemas import AgentName, FinalMessage, GraphState
 from src.settings import settings
 
@@ -82,7 +82,7 @@ def _fallback_summary(state: GraphState, agents: list[AgentName]) -> str:
 async def summarise(state: GraphState) -> FinalMessage:
     used = _used_agents(state)
 
-    if not settings.azure_openai_api_key:
+    if settings.llm_provider == "azure" and not settings.azure_openai_api_key:
         return FinalMessage(message=_fallback_summary(state, used), used_agents=used)
 
     payload = {
@@ -99,16 +99,13 @@ async def summarise(state: GraphState) -> FinalMessage:
     }
 
     try:
-        client = get_openai_client()
-        completion = client.chat.completions.create(
-            model=chat_model(),
+        text = chat_text(
             messages=[
                 {"role": "system", "content": SYSTEM_PROMPT},
                 {"role": "user", "content": str(payload)},
             ],
             temperature=0.2,
-        )
-        text = completion.choices[0].message.content or _fallback_summary(state, used)
+        ) or _fallback_summary(state, used)
     except Exception as exc:  # noqa: BLE001
         log.warning("Summariser LLM call failed (%s) — using fallback text", exc)
         text = _fallback_summary(state, used)

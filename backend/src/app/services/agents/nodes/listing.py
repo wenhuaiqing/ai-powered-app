@@ -12,7 +12,7 @@ from typing import Any
 
 from src.app.services.agents.runtime import emit
 from src.app.services.agents.schemas import GraphState, ListingDraft
-from src.app.services.ai_client import chat_model, get_openai_client
+from src.app.services.llm import chat_structured
 from src.settings import settings
 
 log = logging.getLogger(__name__)
@@ -76,26 +76,21 @@ async def run(state: GraphState, inputs: dict[str, Any]) -> ListingDraft:
     attrs = _resolve_inputs(state, inputs)
     await emit("tool_call", {"node": "listing", "tool": "draft_copy", "args": attrs})
 
-    if not settings.azure_openai_api_key:
+    if settings.llm_provider == "azure" and not settings.azure_openai_api_key:
         draft = _fallback_draft(attrs)
         await emit("tool_result", {"node": "listing", "tool": "draft_copy",
                                     "preview": "(no LLM) generic template draft"})
         return draft
 
     try:
-        client = get_openai_client()
-        completion = client.beta.chat.completions.parse(
-            model=chat_model(),
+        parsed = chat_structured(
             messages=[
                 {"role": "system", "content": SYSTEM_PROMPT},
                 {"role": "user", "content": f"Property attributes:\n{attrs}"},
             ],
-            response_format=ListingDraft,
+            response_model=ListingDraft,
             temperature=0.4,
         )
-        parsed = completion.choices[0].message.parsed
-        if parsed is None:
-            raise ValueError("listing LLM returned no parsed payload")
     except Exception as exc:  # noqa: BLE001
         log.warning("listing LLM call failed (%s) — using fallback draft", exc)
         parsed = _fallback_draft(attrs)

@@ -11,7 +11,7 @@ import logging
 import re
 from typing import Any
 
-from src.app.services.ai_client import chat_model, get_openai_client
+from src.app.services.llm import chat_structured
 from src.app.services.agents.schemas import (
     AgentCall,
     AgentName,
@@ -108,7 +108,7 @@ def _heuristic_decision(message: str) -> PlannerDecision:
 
 
 async def plan(state: GraphState) -> PlannerDecision:
-    if not settings.azure_openai_api_key:
+    if settings.llm_provider == "azure" and not settings.azure_openai_api_key:
         return _heuristic_decision(state.user_message)
 
     page_ctx = state.page_context.model_dump()
@@ -117,20 +117,14 @@ async def plan(state: GraphState) -> PlannerDecision:
         f"Page context: {page_ctx}"
     )
     try:
-        client = get_openai_client()
-        completion = client.beta.chat.completions.parse(
-            model=chat_model(),
+        return chat_structured(
             messages=[
                 {"role": "system", "content": SYSTEM_PROMPT},
                 {"role": "user", "content": user_payload},
             ],
-            response_format=PlannerDecision,
+            response_model=PlannerDecision,
             temperature=0,
         )
-        decision = completion.choices[0].message.parsed
-        if decision is None:
-            raise ValueError("planner returned no parsed payload")
-        return decision
     except Exception as exc:  # noqa: BLE001
         log.warning("Planner LLM call failed (%s) — falling back to heuristic", exc)
         return _heuristic_decision(state.user_message)

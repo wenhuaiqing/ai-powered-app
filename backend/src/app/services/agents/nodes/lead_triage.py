@@ -11,7 +11,7 @@ from typing import Any
 
 from src.app.services.agents.runtime import emit
 from src.app.services.agents.schemas import GraphState, LeadTriageResult
-from src.app.services.ai_client import chat_model, get_openai_client
+from src.app.services.llm import chat_structured
 from src.app.services.duckdb_client import fetch_rows
 from src.settings import settings
 
@@ -95,26 +95,21 @@ async def run(state: GraphState, inputs: dict[str, Any]) -> LeadTriageResult:
 
     await emit("tool_call", {"node": "lead_triage", "tool": "summarise", "args": {"lead_id": lead.get("lead_id")}})
 
-    if not settings.azure_openai_api_key:
+    if settings.llm_provider == "azure" and not settings.azure_openai_api_key:
         result = _fallback_triage(lead)
         await emit("tool_result", {"node": "lead_triage", "tool": "summarise",
                                     "preview": "(no LLM) heuristic triage"})
         return result
 
     try:
-        client = get_openai_client()
-        completion = client.beta.chat.completions.parse(
-            model=chat_model(),
+        parsed = chat_structured(
             messages=[
                 {"role": "system", "content": SYSTEM_PROMPT},
                 {"role": "user", "content": f"Lead record:\n{lead}"},
             ],
-            response_format=LeadTriageResult,
+            response_model=LeadTriageResult,
             temperature=0.2,
         )
-        parsed = completion.choices[0].message.parsed
-        if parsed is None:
-            raise ValueError("lead_triage LLM returned no parsed payload")
     except Exception as exc:  # noqa: BLE001
         log.warning("lead_triage LLM call failed (%s) — using heuristic", exc)
         parsed = _fallback_triage(lead)

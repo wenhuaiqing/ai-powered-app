@@ -30,9 +30,41 @@ def _engine_url() -> str:
     return f"mysql+pymysql://{user}:{password}@{host}:{port}/{db}?charset=utf8mb4"
 
 
+def _strip_line_comments(sql: str) -> str:
+    """Remove `-- ...` line comments before statement splitting so a
+    stray semicolon inside a comment doesn't split the file mid-comment.
+    """
+    out_lines: list[str] = []
+    for line in sql.splitlines():
+        # Walk the line tracking string literals so we don't strip inside one.
+        in_string: str | None = None
+        cleaned_chars: list[str] = []
+        i = 0
+        while i < len(line):
+            ch = line[i]
+            if in_string:
+                cleaned_chars.append(ch)
+                if ch == in_string:
+                    in_string = None
+                i += 1
+                continue
+            if ch in ("'", '"', "`"):
+                in_string = ch
+                cleaned_chars.append(ch)
+                i += 1
+                continue
+            if ch == "-" and i + 1 < len(line) and line[i + 1] == "-":
+                break  # rest of line is a comment
+            cleaned_chars.append(ch)
+            i += 1
+        out_lines.append("".join(cleaned_chars).rstrip())
+    return "\n".join(out_lines)
+
+
 def _split_statements(sql: str) -> list[str]:
     # MySQL doesn't like multi-statement execution through SQLAlchemy by
     # default. Split on semicolons that aren't inside string literals.
+    sql = _strip_line_comments(sql)
     stmts: list[str] = []
     buf = []
     in_string: str | None = None

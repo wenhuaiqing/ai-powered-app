@@ -20,7 +20,7 @@ from typing import Any
 
 from src.app.services.agents.runtime import emit
 from src.app.services.agents.schemas import GeneralResult, GraphState
-from src.app.services.ai_client import chat_model, get_openai_client
+from src.app.services.llm import chat_structured
 from src.settings import settings
 
 log = logging.getLogger(__name__)
@@ -80,7 +80,7 @@ def _fallback(question: str) -> GeneralResult:
 async def run(state: GraphState, inputs: dict[str, Any]) -> GeneralResult:
     question = (inputs or {}).get("question") or state.user_message
 
-    if not settings.azure_openai_api_key:
+    if settings.llm_provider == "azure" and not settings.azure_openai_api_key:
         result = _fallback(question)
         await emit("tool_result", {"node": "general", "tool": "chat",
                                     "preview": "(no LLM) returning onboarding suggestions"})
@@ -89,19 +89,14 @@ async def run(state: GraphState, inputs: dict[str, Any]) -> GeneralResult:
     await emit("tool_call", {"node": "general", "tool": "chat", "args": {"prompt": question}})
 
     try:
-        client = get_openai_client()
-        completion = client.beta.chat.completions.parse(
-            model=chat_model(),
+        result = chat_structured(
             messages=[
                 {"role": "system", "content": SYSTEM_PROMPT},
                 {"role": "user", "content": f"User message: {question}\n\nPage: {state.page_context.module}"},
             ],
-            response_format=GeneralResult,
+            response_model=GeneralResult,
             temperature=0.3,
         )
-        result = completion.choices[0].message.parsed
-        if result is None:
-            raise ValueError("general agent returned no parsed payload")
     except Exception as exc:  # noqa: BLE001
         log.warning("general agent LLM call failed (%s) — using fallback text", exc)
         result = _fallback(question)

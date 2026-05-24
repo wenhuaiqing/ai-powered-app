@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Literal
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -17,11 +18,21 @@ class Settings(BaseSettings):
         extra="ignore",
     )
 
+    # LLM provider toggle. "azure" uses Azure OpenAI for chat; "bedrock"
+    # uses AWS Bedrock (Claude on AWS). Embeddings always use Azure for
+    # now -- the RAG parquet files were built with text-embedding-3-small,
+    # and switching to Titan would mean rebuilding the corpora.
+    llm_provider: Literal["azure", "bedrock"] = "azure"
+
     # Azure OpenAI
     azure_openai_endpoint: str = ""
     azure_openai_api_key: str = ""
     azure_openai_chat_model: str = "gpt-4o"
     azure_openai_embed_model: str = "text-embedding-3-small"
+
+    # AWS Bedrock (only used when LLM_PROVIDER=bedrock).
+    aws_region: str = "ap-southeast-2"
+    bedrock_chat_model: str = "anthropic.claude-sonnet-4-6-20250930-v1:0"
 
     # Tavily
     tavily_api_key: str = ""
