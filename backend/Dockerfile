@@ -50,10 +50,20 @@ RUN groupadd --system app && useradd --system --gid app --home /app app
 WORKDIR /app
 COPY --from=builder --chown=app:app /app /app
 
+# /app is created by WORKDIR as root before USER switches to app, so even
+# though the COPY chowns the contents, the parent dir stays root-owned
+# and the app user can't create new subdirs in it. Fix + pre-create the
+# data dir so the startup ETL can write the DuckDB.
+RUN chown app:app /app && \
+    mkdir -p /app/data && chown app:app /app/data
+
 USER app
 EXPOSE 8000
 
-# Default CMD runs the FastAPI app. Override to e.g.
-# ["python", "scripts/seed_all.py"] for the ECS seed task.
+# Default CMD: rebuild DuckDB from MySQL on every boot (Fargate gives each
+# task its own ephemeral filesystem, so the seeded DuckDB from a sibling
+# task is not visible here). ETL is ~3s. Then exec uvicorn so it becomes
+# PID 1 and receives signals correctly.
+# Override via task-def `command` for the seed task (which skips the ETL).
 WORKDIR /app/backend
-CMD ["uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["sh", "-c", "python ../scripts/etl_mysql_to_duckdb.py && exec uvicorn src.main:app --host 0.0.0.0 --port 8000"]
