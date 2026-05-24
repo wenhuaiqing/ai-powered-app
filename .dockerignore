@@ -1,0 +1,52 @@
+# Repo-root .dockerignore. Applies to all `docker build` invocations
+# from this directory (which is the context for both the backend and
+# frontend Dockerfiles).
+
+# VCS
+.git
+.gitignore
+.gitattributes
+
+# Local secrets + env
+.env
+.env.local
+.env.*.local
+
+# Python build / cache
+**/__pycache__/
+**/*.pyc
+**/.pytest_cache/
+**/.mypy_cache/
+**/.ruff_cache/
+backend/.venv/
+
+# Node
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/
+
+# Built artefacts -- these live outside the image; mounted as a volume
+# locally and built fresh in the cloud.
+data/
+!data/.gitkeep
+
+# Docs / IDE
+.vscode/
+.idea/
+*.swp
+.DS_Store
+
+# Claude / project tools
+.claude/
+docs/screenshots/
+
+# Test outputs
+evals/results/
+htmlcov/
+.coverage
+
+# Terraform state
+infra/.terraform/
+infra/*.tfstate
+infra/*.tfstate.backup
+infra/.terraform.lock.hcl
