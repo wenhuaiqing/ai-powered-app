@@ -31,9 +31,13 @@ resource "aws_iam_role_policy" "execution_secrets" {
   policy = jsonencode({
     Version = "2012-10-17"
     Statement = [{
-      Effect   = "Allow"
-      Action   = ["secretsmanager:GetSecretValue"]
-      Resource = aws_secretsmanager_secret.db.arn
+      Effect = "Allow"
+      Action = ["secretsmanager:GetSecretValue"]
+      Resource = [
+        aws_secretsmanager_secret.db.arn,
+        aws_secretsmanager_secret.tavily.arn,
+        aws_secretsmanager_secret.azure_openai.arn,
+      ]
     }]
   })
 }
