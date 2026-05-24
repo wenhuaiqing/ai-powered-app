@@ -29,5 +29,57 @@ services:
       retries: 20
       start_period: 10s
 
+  # FastAPI backend. Reads MySQL over the docker network (hostname `mysql`)
+  # and DuckDB / model.pkl / parquet from a bind-mount of ./data. LLM keys
+  # come from the host's .env (loaded by docker-compose via env_file).
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    container_name: ai-powered-app-backend
+    restart: unless-stopped
+    depends_on:
+      mysql:
+        condition: service_healthy
+    env_file:
+      - .env
+    environment:
+      # Override the .env defaults so the backend reaches MySQL inside
+      # the compose network rather than localhost.
+      MYSQL_HOST: mysql
+      MYSQL_PORT: "3306"
+      MYSQL_USER: app
+      MYSQL_PASSWORD: app
+      MYSQL_DATABASE: reapit_demo
+      CORS_ORIGINS: "http://localhost:8080,http://localhost:5173"
+    volumes:
+      # Built artefacts (DuckDB, model.pkl, parquet) stay on the host.
+      # Run `uv run python scripts/seed_all.py` + train_model + corpus
+      # scripts once to populate before `docker compose up backend`.
+      - ./data:/app/data
+    ports:
+      - "8000:8000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=2).status==200 else 1)"]
+      interval: 10s
+      timeout: 4s
+      retries: 12
+      start_period: 15s
+
+  # Vite SPA built into a static bundle, served by nginx with SPA fallback
+  # and /api + /orb + /health reverse-proxied to the backend on the
+  # internal compose network. Single origin -> no CORS round-trip.
+  frontend:
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile
+    container_name: ai-powered-app-frontend
+    restart: unless-stopped
+    depends_on:
+      backend:
+        condition: service_healthy
+    ports:
+      - "8080:80"
+
 volumes:
   mysql-data:

@@ -242,7 +242,10 @@ ai-powered-app/
 │   ├── build_regulation_corpus.py    Chunks + embeds via Azure
 │   └── build_review_embeddings.py    Embeds 421 suburb cards
 ├── infra/                            Terraform — VPC + RDS MySQL + Secrets + seed ECS task (Phase 2 step 0)
-├── docker-compose.yml                MySQL 8 for local dev
+├── backend/Dockerfile                Multi-stage uv build → slim runtime (Phase 2 step 2)
+├── frontend/Dockerfile               Vite build → nginx with SPA fallback + /api proxy
+├── frontend/nginx.conf               Server-level root, SSE-friendly proxy_buffering off
+├── docker-compose.yml                Full stack: MySQL + backend + frontend
 ├── misc/                             Kaggle CSVs + notebooks (read-only)
 ├── data/                             Built artefacts (gitignored except docs/)
 └── .github/workflows/                evals-smoke.yml (Tier 3 PR gate)
@@ -295,6 +298,25 @@ uv run python ../evals/run.py --tier smoke
 # Tier-2 LLM-judge full run (~$0.50 in OpenAI tokens, ~3 min)
 uv run python ../evals/run.py --tier full
 ```
+
+### Or: full stack via docker compose
+
+```powershell
+# After the one-time uv-run data build above (model.pkl + parquet + DuckDB):
+docker compose up -d --build
+# -> MySQL on :3306, FastAPI on :8000, nginx-served SPA on :8080
+
+# All three containers wait on healthchecks before the next starts; first
+# build takes ~2 min. data/ mounts as a bind volume so re-running the
+# scripts on the host updates what the container reads. Stop the stack:
+docker compose down              # keeps the MySQL volume
+docker compose down --volumes    # nukes the seed data too
+```
+
+The nginx container proxies `/api/*`, `/orb/*`, and `/health` to the
+backend service over the compose network, so the SPA is single-origin
+(no CORS round-trip) and SSE streams unbuffered (no `nginx` cache, no
+`X-Accel-Buffering`).
 
 ## 5-minute demo script
 
