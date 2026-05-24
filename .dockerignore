@@ -25,10 +25,11 @@ frontend/node_modules/
 frontend/dist/
 frontend/.vite/
 
-# Built artefacts -- these live outside the image; mounted as a volume
-# locally and built fresh in the cloud.
-data/
-!data/.gitkeep
+# Don't ship the ephemeral DuckDB into the image; the backend rebuilds
+# it from MySQL on boot. Everything else under data/ (model.pkl, the
+# embedding parquets, regulation source docs) DOES ship.
+data/platform.duckdb
+data/*.duckdb.wal
 
 # Docs / IDE
 .vscode/

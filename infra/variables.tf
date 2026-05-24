@@ -75,6 +75,35 @@ variable "github_repository" {
   default     = "owenwen/ai-powered-app"
 }
 
+# Sensitive runtime secrets. Pass via `-var` or terraform.tfvars (which
+# is gitignored). Each lands in Secrets Manager; the ECS task pulls them
+# at start time.
+variable "tavily_api_key" {
+  description = "Tavily web search API key. Required for Market Watch + Compliance web fallback."
+  type        = string
+  sensitive   = true
+  default     = ""
+}
+
+variable "azure_openai_api_key" {
+  description = "Azure OpenAI API key. Used for query-time embeddings (RAG retrievers) regardless of LLM_PROVIDER."
+  type        = string
+  sensitive   = true
+  default     = ""
+}
+
+variable "azure_openai_endpoint" {
+  description = "Azure OpenAI endpoint URL (e.g. https://<resource>.openai.azure.com/openai/v1/)."
+  type        = string
+  default     = ""
+}
+
+variable "azure_openai_embed_model" {
+  description = "Azure OpenAI embedding deployment name."
+  type        = string
+  default     = "text-embedding-3-small"
+}
+
 locals {
   name = "${var.project}-${var.env}"
 }

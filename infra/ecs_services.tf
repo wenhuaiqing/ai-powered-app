@@ -57,16 +57,23 @@ resource "aws_ecs_task_definition" "backend" {
       protocol      = "tcp"
     }]
     environment = [
-      { name = "LLM_PROVIDER",    value = "bedrock" },
-      { name = "AWS_REGION",      value = var.region },
-      { name = "MYSQL_HOST",      value = aws_db_instance.mysql.address },
-      { name = "MYSQL_PORT",      value = tostring(aws_db_instance.mysql.port) },
-      { name = "MYSQL_USER",      value = var.db_username },
-      { name = "MYSQL_DATABASE",  value = var.db_name },
-      { name = "CORS_ORIGINS",    value = "http://${aws_lb.main.dns_name}" },
+      { name = "LLM_PROVIDER",             value = "bedrock" },
+      { name = "AWS_REGION",               value = var.region },
+      { name = "MYSQL_HOST",               value = aws_db_instance.mysql.address },
+      { name = "MYSQL_PORT",               value = tostring(aws_db_instance.mysql.port) },
+      { name = "MYSQL_USER",               value = var.db_username },
+      { name = "MYSQL_DATABASE",           value = var.db_name },
+      { name = "CORS_ORIGINS",             value = "http://${aws_lb.main.dns_name}" },
+      # Azure OpenAI URL + embed model name (the API key is a secret).
+      # Embeddings always go via Azure regardless of LLM_PROVIDER --
+      # the RAG parquets were built with text-embedding-3-small.
+      { name = "AZURE_OPENAI_ENDPOINT",    value = var.azure_openai_endpoint },
+      { name = "AZURE_OPENAI_EMBED_MODEL", value = var.azure_openai_embed_model },
     ]
     secrets = [
-      { name = "MYSQL_PASSWORD", valueFrom = "${aws_secretsmanager_secret.db.arn}:password::" },
+      { name = "MYSQL_PASSWORD",         valueFrom = "${aws_secretsmanager_secret.db.arn}:password::" },
+      { name = "TAVILY_API_KEY",         valueFrom = aws_secretsmanager_secret.tavily.arn },
+      { name = "AZURE_OPENAI_API_KEY",   valueFrom = aws_secretsmanager_secret.azure_openai.arn },
     ]
     healthCheck = {
       command     = ["CMD-SHELL", "python -c \"import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=2).status==200 else 1)\""]

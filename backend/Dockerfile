@@ -4,11 +4,12 @@
 # Stage 2 (runtime): copies the venv + source into a slim Python image,
 # runs uvicorn. No build tooling in the runtime layer.
 #
-# data/ (model.pkl, duckdb, parquet) is NOT baked in here -- it's either
-# mounted as a volume locally (docker-compose) or seeded via the ECS
-# `seed_all.py` task against RDS + a regenerated DuckDB on a shared
-# volume in AWS. Keeping data/ out of the image makes builds fast +
-# provider-agnostic (Azure vs Bedrock embeddings have different dims).
+# data/ (model.pkl + the embedding parquets + regulation source docs) IS
+# baked into the image -- Fargate filesystems are ephemeral per-task, and
+# rebuilding the parquets + retraining the model on every container boot
+# would be too expensive + needs Azure-embed access. The only data
+# artefact we DON'T ship is platform.duckdb; the startup ETL rebuilds
+# that from MySQL on every boot (see CMD below).
 
 # ---------- builder ----------
 FROM ghcr.io/astral-sh/uv:python3.12-bookworm-slim AS builder
@@ -35,6 +36,10 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 # the same Dockerfile output (different CMDs).
 COPY scripts ./scripts
 COPY misc ./misc
+
+# Pre-built data artefacts (excluding platform.duckdb via .dockerignore).
+# Model, embeddings, regulation docs all ship in the image.
+COPY data ./data
 
 
 # ---------- runtime ----------
