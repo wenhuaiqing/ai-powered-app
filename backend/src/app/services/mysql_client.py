@@ -78,15 +78,18 @@ def execute(
 def _coerce(value: Any) -> Any:
     """Normalise types at the API boundary.
 
-    MySQL DECIMAL columns surface as `decimal.Decimal`, which FastAPI's
-    default JSON encoder serialises as the string "718832.00". The
-    matcher / valuation agents then call `int()` on those strings and
-    blow up. Convert to native float here so downstream code (agents,
-    frontend JSON) gets a number.
+    - Decimal -> float (FastAPI's encoder otherwise stringifies them,
+      and agents call int() on those strings and blow up).
+    - datetime -> ISO string with a `Z` suffix (MySQL DATETIME columns
+      are timezone-naive and the server runs in UTC, so tagging Z lets
+      the browser convert to local time correctly).
+    - date -> ISO date string.
     """
     if isinstance(value, Decimal):
         return float(value)
-    if isinstance(value, (_dt.date, _dt.datetime)):
+    if isinstance(value, _dt.datetime):
+        return value.isoformat() + "Z"
+    if isinstance(value, _dt.date):
         return value.isoformat()
     return value
 
