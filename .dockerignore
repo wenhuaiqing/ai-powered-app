@@ -25,11 +25,14 @@ frontend/node_modules/
 frontend/dist/
 frontend/.vite/
 
-# Don't ship the ephemeral DuckDB into the image; the backend rebuilds
-# it from MySQL on boot. Everything else under data/ (model.pkl, the
-# embedding parquets, regulation source docs) DOES ship.
-data/platform.duckdb
-data/*.duckdb.wal
+# data/ does not ship in the image (apart from regulation source docs,
+# which are tiny + needed for the build_regulation_corpus script). The
+# heavy artefacts (model.pkl, parquets) come down from S3 on boot.
+data/
+!data/regulations/
+!data/regulations/docs/
+!data/regulations/docs/**
+!data/.gitkeep
 
 # Docs / IDE
 .vscode/

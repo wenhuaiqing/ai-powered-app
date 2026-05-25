@@ -76,12 +76,6 @@ async def run(state: GraphState, inputs: dict[str, Any]) -> ListingDraft:
     attrs = _resolve_inputs(state, inputs)
     await emit("tool_call", {"node": "listing", "tool": "draft_copy", "args": attrs})
 
-    if settings.llm_provider == "azure" and not settings.azure_openai_api_key:
-        draft = _fallback_draft(attrs)
-        await emit("tool_result", {"node": "listing", "tool": "draft_copy",
-                                    "preview": "(no LLM) generic template draft"})
-        return draft
-
     try:
         parsed = chat_structured(
             messages=[
