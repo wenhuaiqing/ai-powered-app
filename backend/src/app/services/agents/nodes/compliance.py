@@ -101,16 +101,6 @@ async def run(state: GraphState, inputs: dict[str, Any]) -> ComplianceResult:
             ))
             used_fallback = True
 
-    if not settings.azure_openai_api_key:
-        answer = await _fallback_from_citations(local_hits)
-        confidence = "low" if max_score < FALLBACK_THRESHOLD else "medium"
-        return ComplianceResult(
-            answer=answer,
-            citations=local_hits,
-            confidence=confidence,
-            used_web_fallback=used_fallback,
-        )
-
     # Build the LLM prompt and ask for a strict ComplianceResult
     citation_block = "\n\n".join(
         f"[{i+1}] source={c.source} | url={c.url or ''} | source_type={c.source_type}\n{c.snippet}"

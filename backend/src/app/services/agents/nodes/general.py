@@ -80,12 +80,6 @@ def _fallback(question: str) -> GeneralResult:
 async def run(state: GraphState, inputs: dict[str, Any]) -> GeneralResult:
     question = (inputs or {}).get("question") or state.user_message
 
-    if settings.llm_provider == "azure" and not settings.azure_openai_api_key:
-        result = _fallback(question)
-        await emit("tool_result", {"node": "general", "tool": "chat",
-                                    "preview": "(no LLM) returning onboarding suggestions"})
-        return result
-
     await emit("tool_call", {"node": "general", "tool": "chat", "args": {"prompt": question}})
 
     try:

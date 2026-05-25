@@ -93,3 +93,8 @@ output "github_actions_role_arn" {
   value       = aws_iam_role.github_actions_deploy.arn
   description = "Paste into the AWS_DEPLOY_ROLE_ARN GitHub Actions variable."
 }
+
+output "s3_artefacts_bucket" {
+  value       = aws_s3_bucket.artefacts.bucket
+  description = "Bucket holding model.pkl + RAG parquets. Backend downloads on boot; GHA + laptop scripts upload here."
+}

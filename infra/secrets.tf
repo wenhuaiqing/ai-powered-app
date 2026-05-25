@@ -44,12 +44,3 @@ resource "aws_secretsmanager_secret_version" "tavily" {
   secret_string = var.tavily_api_key
 }
 
-resource "aws_secretsmanager_secret" "azure_openai" {
-  name                    = "${local.name}/azure-openai-api-key"
-  recovery_window_in_days = 0
-}
-
-resource "aws_secretsmanager_secret_version" "azure_openai" {
-  secret_id     = aws_secretsmanager_secret.azure_openai.id
-  secret_string = var.azure_openai_api_key
-}

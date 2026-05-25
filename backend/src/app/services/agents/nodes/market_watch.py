@@ -42,13 +42,6 @@ async def _synthesise(question: str, hits: list[dict[str, Any]]) -> str:
     if not hits:
         return ("I couldn't find any relevant web results for that question. "
                 "Try a more specific query or check the Insights tab for our local data.")
-    if settings.llm_provider == "azure" and not settings.azure_openai_api_key:
-        # Minimal "no LLM" fallback: stitch the top two snippets together.
-        head = hits[0]
-        out = f"{head['snippet']} ({head['title']})"
-        if len(hits) > 1:
-            out += f"\n\nAlso: {hits[1]['snippet']} ({hits[1]['title']})"
-        return out
     try:
         payload = "\n\n".join(
             f"[{i+1}] {h['title']} — {h['url']}\n{h['snippet']}"

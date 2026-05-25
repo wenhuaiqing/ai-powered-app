@@ -58,8 +58,7 @@ async def test_graph_invalid_sql_is_caught(monkeypatch):
         return _BadDraft()
 
     monkeypatch.setattr(dq, "_ask_llm", fake_ask)
-    # Force the LLM path by pretending we have a key
-    monkeypatch.setattr("src.app.services.agents.nodes.data_query.settings.azure_openai_api_key", "fake", raising=False)
+    # LLM path is always live now (Bedrock); _ask_llm is mocked above.
 
     queue: asyncio.Queue = asyncio.Queue()
     set_queue(queue)

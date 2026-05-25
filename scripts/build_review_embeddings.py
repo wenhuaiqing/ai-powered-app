@@ -1,8 +1,12 @@
 """Embed Sydney Suburbs Reviews into data/reviews_embeddings.parquet.
 
-Each suburb becomes a single 'card' — descriptive prose plus key numeric
-scores formatted as text — so queries like 'family-friendly quiet near
-transport' can retrieve relevant suburbs by cosine similarity.
+Each suburb becomes a single 'card' -- descriptive prose plus key numeric
+scores -- so queries like "family-friendly quiet near transport" can
+retrieve relevant suburbs by cosine similarity.
+
+Uses Bedrock Titan v2 (1024-D) via boto3. Needs AWS creds on PATH
+(`aws configure` or env vars) + Bedrock model access enabled in the
+target region.
 
 Run from repo root after build_db.py:
     uv run python scripts/build_review_embeddings.py
@@ -10,24 +14,23 @@ Run from repo root after build_db.py:
 
 from __future__ import annotations
 
-import os
 import sys
 import time
 from pathlib import Path
 
 import duckdb
+import numpy as np
 import pandas as pd
-from dotenv import load_dotenv
-from openai import OpenAI
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 DB_PATH = REPO_ROOT / "data" / "platform.duckdb"
 OUT_PATH = REPO_ROOT / "data" / "reviews_embeddings.parquet"
 
-load_dotenv(REPO_ROOT / ".env")
-AZURE_ENDPOINT = os.getenv("AZURE_OPENAI_ENDPOINT", "")
-AZURE_API_KEY = os.getenv("AZURE_OPENAI_API_KEY", "")
-EMBED_MODEL = os.getenv("AZURE_OPENAI_EMBED_MODEL", "text-embedding-3-small")
+# Make the backend importable so we reuse the same Titan wrapper the
+# RAG retriever uses at request time -- guarantees identical
+# normalisation + dimensions between corpus and query.
+sys.path.insert(0, str(REPO_ROOT / "backend"))
+from src.app.services import embed  # noqa: E402
 
 
 def _card(row: pd.Series) -> str:
@@ -60,16 +63,7 @@ def _card(row: pd.Series) -> str:
     return "\n".join(p for p in parts if p)
 
 
-def embed_batch(client: OpenAI, texts: list[str]) -> list[list[float]]:
-    resp = client.embeddings.create(model=EMBED_MODEL, input=texts)
-    return [d.embedding for d in resp.data]
-
-
 def main() -> None:
-    if not AZURE_ENDPOINT or not AZURE_API_KEY:
-        print("AZURE_OPENAI_ENDPOINT / AZURE_OPENAI_API_KEY not set — cannot build embeddings.",
-              file=sys.stderr)
-        sys.exit(1)
     if not DB_PATH.exists():
         print(f"DuckDB not found at {DB_PATH}. Run scripts/build_db.py first.", file=sys.stderr)
         sys.exit(1)
@@ -80,25 +74,26 @@ def main() -> None:
     suburbs["card"] = suburbs.apply(_card, axis=1)
     print(f"Built {len(suburbs)} suburb cards", flush=True)
 
-    client = OpenAI(base_url=AZURE_ENDPOINT, api_key=AZURE_API_KEY)
-    BATCH = 32
-    embeddings: list[list[float]] = []
     cards = suburbs["card"].tolist()
-    for i in range(0, len(cards), BATCH):
-        batch = cards[i:i + BATCH]
+    embeddings: list[list[float]] = []
+    started = time.time()
+    for i, card in enumerate(cards):
         attempt = 0
         while True:
             try:
-                embeddings.extend(embed_batch(client, batch))
+                vec = embed.embed_batch([card])[0]
+                embeddings.append(vec.tolist())
                 break
             except Exception as exc:  # noqa: BLE001
                 attempt += 1
                 if attempt > 3:
                     raise
                 wait = 2 ** attempt
-                print(f"  batch {i//BATCH} failed ({exc}); retry {attempt} after {wait}s", flush=True)
+                print(f"  card {i} failed ({exc}); retry {attempt} after {wait}s", flush=True)
                 time.sleep(wait)
-        print(f"  embedded {i + len(batch)}/{len(cards)}", flush=True)
+        if (i + 1) % 25 == 0 or i == len(cards) - 1:
+            elapsed = time.time() - started
+            print(f"  embedded {i + 1}/{len(cards)}  ({elapsed:.1f}s elapsed)", flush=True)
 
     out_df = suburbs[[
         "name", "region", "postcode", "family_friendliness", "safety",
@@ -108,7 +103,7 @@ def main() -> None:
     out_df["embedding"] = embeddings
     OUT_PATH.parent.mkdir(parents=True, exist_ok=True)
     out_df.to_parquet(OUT_PATH, index=False)
-    print(f"Wrote {len(out_df)} suburb embeddings to {OUT_PATH}")
+    print(f"Wrote {len(out_df)} suburb embeddings ({len(embeddings[0])}-D) to {OUT_PATH}")
 
 
 if __name__ == "__main__":

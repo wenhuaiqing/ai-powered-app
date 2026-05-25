@@ -31,13 +31,17 @@ dist/
 !.env.example
 
 # Build artefacts.
-# - platform.duckdb is rebuilt on backend boot from MySQL, so it's
-#   gitignored (also avoids stale binary diffs).
-# - model.pkl + the embedding parquets + the regulation source docs
-#   are baked into the deployed image (the ECS Fargate filesystem is
-#   ephemeral, so they need to ship). Total ~80 MB.
-data/platform.duckdb
-data/*.duckdb.wal
+# - platform.duckdb is rebuilt on backend boot from MySQL.
+# - model.pkl + embedding parquets live in S3 (provisioned by
+#   infra/s3.tf). Backend downloads them on container boot.
+# - The regulation source docs (data/regulations/docs/*.md) ARE
+#   committed -- they're the input to build_regulation_corpus.
+data/*
+!data/.gitkeep
+!data/regulations/
+data/regulations/*
+!data/regulations/docs/
+!data/regulations/docs/**
 
 # Eval run outputs — keep the folder, ignore the timestamped JSON dumps.
 evals/results/*

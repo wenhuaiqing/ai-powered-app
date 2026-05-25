@@ -4,12 +4,11 @@
 # Stage 2 (runtime): copies the venv + source into a slim Python image,
 # runs uvicorn. No build tooling in the runtime layer.
 #
-# data/ (model.pkl + the embedding parquets + regulation source docs) IS
-# baked into the image -- Fargate filesystems are ephemeral per-task, and
-# rebuilding the parquets + retraining the model on every container boot
-# would be too expensive + needs Azure-embed access. The only data
-# artefact we DON'T ship is platform.duckdb; the startup ETL rebuilds
-# that from MySQL on every boot (see CMD below).
+# data/ does NOT ship in the image (apart from regulations/docs/, which
+# are tiny + needed by the build_regulation_corpus script). Heavy
+# artefacts -- model.pkl + embedding parquets -- live in S3 and the
+# backend downloads them on boot. platform.duckdb is rebuilt from MySQL
+# on boot too (see CMD below).
 
 # ---------- builder ----------
 FROM ghcr.io/astral-sh/uv:python3.12-bookworm-slim AS builder
@@ -37,9 +36,9 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 COPY scripts ./scripts
 COPY misc ./misc
 
-# Pre-built data artefacts (excluding platform.duckdb via .dockerignore).
-# Model, embeddings, regulation docs all ship in the image.
-COPY data ./data
+# Only the regulation source docs ship from data/. The heavy artefacts
+# (model.pkl, parquets) come down from S3 on boot via download_artefacts.
+COPY data/regulations/docs ./data/regulations/docs
 
 
 # ---------- runtime ----------
@@ -65,10 +64,11 @@ RUN chown app:app /app && \
 USER app
 EXPOSE 8000
 
-# Default CMD: rebuild DuckDB from MySQL on every boot (Fargate gives each
-# task its own ephemeral filesystem, so the seeded DuckDB from a sibling
-# task is not visible here). ETL is ~3s. Then exec uvicorn so it becomes
-# PID 1 and receives signals correctly.
-# Override via task-def `command` for the seed task (which skips the ETL).
+# Default CMD on boot:
+#   1. download_artefacts pulls model.pkl + parquets from S3 if missing
+#   2. etl_mysql_to_duckdb builds the analytical DuckDB from RDS MySQL
+#   3. exec uvicorn so it becomes PID 1 and receives signals correctly
+# Override via task-def `command` for the seed task (which only runs
+# the MySQL migrations + CSV loader).
 WORKDIR /app/backend
-CMD ["sh", "-c", "python ../scripts/etl_mysql_to_duckdb.py && exec uvicorn src.main:app --host 0.0.0.0 --port 8000"]
+CMD ["sh", "-c", "python ../scripts/download_artefacts.py && python ../scripts/etl_mysql_to_duckdb.py && exec uvicorn src.main:app --host 0.0.0.0 --port 8000"]

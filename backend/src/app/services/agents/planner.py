@@ -108,9 +108,6 @@ def _heuristic_decision(message: str) -> PlannerDecision:
 
 
 async def plan(state: GraphState) -> PlannerDecision:
-    if settings.llm_provider == "azure" and not settings.azure_openai_api_key:
-        return _heuristic_decision(state.user_message)
-
     page_ctx = state.page_context.model_dump()
     user_payload = (
         f"User message: {state.user_message}\n"

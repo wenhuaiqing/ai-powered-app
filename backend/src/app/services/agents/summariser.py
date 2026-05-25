@@ -82,9 +82,6 @@ def _fallback_summary(state: GraphState, agents: list[AgentName]) -> str:
 async def summarise(state: GraphState) -> FinalMessage:
     used = _used_agents(state)
 
-    if settings.llm_provider == "azure" and not settings.azure_openai_api_key:
-        return FinalMessage(message=_fallback_summary(state, used), used_agents=used)
-
     payload = {
         "user_message": state.user_message,
         "compliance": state.compliance_result.model_dump() if state.compliance_result else None,

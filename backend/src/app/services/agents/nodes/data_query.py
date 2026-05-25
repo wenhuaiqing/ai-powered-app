@@ -114,19 +114,16 @@ async def _ask_llm(question: str, retry_with: str | None = None) -> _Draft:
 async def run(state: GraphState, inputs: dict[str, Any]) -> DataQueryResult:
     question = (inputs or {}).get("question") or state.user_message
 
-    if settings.llm_provider == "azure" and not settings.azure_openai_api_key:
+    try:
+        draft = await _ask_llm(question)
+    except Exception as exc:  # noqa: BLE001
+        log.warning("data_query LLM call failed (%s) — using fallback query", exc)
         draft = _interpret_no_llm(question)
-    else:
-        try:
-            draft = await _ask_llm(question)
-        except Exception as exc:  # noqa: BLE001
-            log.warning("data_query LLM call failed (%s) — using fallback query", exc)
-            draft = _interpret_no_llm(question)
 
     await emit("tool_call", {"node": "data_query", "tool": "duckdb_query", "args": {"sql": draft.sql}})
 
     outcome = validate(draft.sql)
-    if not outcome.ok and settings.azure_openai_api_key:
+    if not outcome.ok:
         # Retry once with the validator errors as feedback
         await emit("tool_result", {
             "node": "data_query",

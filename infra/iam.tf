@@ -36,7 +36,6 @@ resource "aws_iam_role_policy" "execution_secrets" {
       Resource = [
         aws_secretsmanager_secret.db.arn,
         aws_secretsmanager_secret.tavily.arn,
-        aws_secretsmanager_secret.azure_openai.arn,
       ]
     }]
   })
