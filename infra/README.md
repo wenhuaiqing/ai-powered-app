@@ -98,11 +98,150 @@ source CSVs change.
 echo "http://$(terraform output -raw alb_dns_name)"
 ```
 
+## ALB access logs + Athena
+
+Every HTTP request hitting the ALB lands in S3 (gzipped, partitioned by
+`AWSLogs/<account>/elasticloadbalancing/<region>/YYYY/MM/DD/`). Useful
+for:
+
+- Confirming a recruiter clicked the live demo URL (IP geolocation +
+  user agent + timestamp)
+- Debugging 5xx spikes after a deploy
+- Auditing what paths are getting hit (post-launch SEO-style insight)
+
+Bucket name lives in the Terraform output:
+
+```bash
+terraform output -raw s3_alb_logs_bucket
+# e.g. ai-powered-app-demo-alb-logs-766265104419
+```
+
+Logs start landing ~5 minutes after `terraform apply` enables them.
+
+### One-time Athena setup
+
+Open **AWS Console → Athena → Query editor**. If this is your first
+time, set a query result location (any bucket; create a fresh
+`ai-powered-app-demo-athena-results-<account>` if needed).
+
+Then run this CREATE TABLE once — substitute `<bucket>` with the value
+from `terraform output -raw s3_alb_logs_bucket` and `<account>` with
+your AWS account ID:
+
+```sql
+CREATE EXTERNAL TABLE IF NOT EXISTS alb_logs (
+    type                            string,
+    time                            string,
+    elb                             string,
+    client_ip                       string,
+    client_port                     int,
+    target_ip                       string,
+    target_port                     int,
+    request_processing_time         double,
+    target_processing_time          double,
+    response_processing_time        double,
+    elb_status_code                 int,
+    target_status_code              string,
+    received_bytes                  bigint,
+    sent_bytes                      bigint,
+    request_verb                    string,
+    request_url                     string,
+    request_proto                   string,
+    user_agent                      string,
+    ssl_cipher                      string,
+    ssl_protocol                    string,
+    target_group_arn                string,
+    trace_id                        string,
+    domain_name                     string,
+    chosen_cert_arn                 string,
+    matched_rule_priority           string,
+    request_creation_time           string,
+    actions_executed                string,
+    redirect_url                    string,
+    lambda_error_reason             string,
+    target_port_list                string,
+    target_status_code_list         string,
+    classification                  string,
+    classification_reason           string,
+    conn_trace_id                   string
+)
+ROW FORMAT SERDE 'org.apache.hadoop.hive.serde2.RegexSerDe'
+WITH SERDEPROPERTIES (
+    'serialization.format' = '1',
+    'input.regex' =
+    '([^ ]*) ([^ ]*) ([^ ]*) ([^ ]*):([0-9]*) ([^ ]*)[:-]([0-9]*) ([-.0-9]*) ([-.0-9]*) ([-.0-9]*) (|[-0-9]*) (-|[-0-9]*) ([-0-9]*) ([-0-9]*) \\\"([^ ]*) (.*) (- |[^ ]*)\\\" \\\"([^\\\"]*)\\\" ([A-Z0-9-_]+) ([A-Za-z0-9.-]*) ([^ ]*) \\\"([^\\\"]*)\\\" \\\"([^\\\"]*)\\\" \\\"([^\\\"]*)\\\" ([-.0-9]*) ([^ ]*) \\\"([^\\\"]*)\\\" \\\"([^\\\"]*)\\\" \\\"([^ ]*)\\\" \\\"([^\\s]+?)\\\" \\\"([^\\s]+)\\\" \\\"([^ ]*)\\\" \\\"([^ ]*)\\\" ?([^ ]*)?'
+)
+LOCATION 's3://<bucket>/AWSLogs/<account>/elasticloadbalancing/ap-southeast-2/';
+```
+
+This points Athena at the bucket; logs become queryable immediately.
+
+### Useful queries
+
+**Who visited the live URL in the last 24h?**
+
+```sql
+SELECT
+    from_iso8601_timestamp(time) AS request_time,
+    client_ip,
+    request_url,
+    elb_status_code,
+    user_agent
+FROM alb_logs
+WHERE from_iso8601_timestamp(time) > current_timestamp - interval '1' day
+  AND request_url LIKE '%/' OR request_url LIKE '%/dashboard%'
+ORDER BY request_time DESC
+LIMIT 100;
+```
+
+**Unique visitors (by IP) per day**:
+
+```sql
+SELECT
+    date(from_iso8601_timestamp(time)) AS day,
+    COUNT(DISTINCT client_ip) AS unique_ips,
+    COUNT(*) AS total_requests
+FROM alb_logs
+GROUP BY 1
+ORDER BY 1 DESC;
+```
+
+**Did the Reapit recruiter click?** Filter to non-bot user-agents +
+requests for `/` (the SPA landing):
+
+```sql
+SELECT
+    from_iso8601_timestamp(time) AS request_time,
+    client_ip,
+    user_agent
+FROM alb_logs
+WHERE request_url LIKE '%//'
+  AND user_agent NOT LIKE '%bot%'
+  AND user_agent NOT LIKE '%spider%'
+  AND from_iso8601_timestamp(time) > current_timestamp - interval '7' day
+ORDER BY request_time DESC
+LIMIT 50;
+```
+
+Take the `client_ip` value and run it through https://ipinfo.io or
+similar — recruiters in Sydney/Brisbane will show as AU-based, often
+with the ISP listed (e.g. "Telstra Internet", "Optus" for residential).
+
+### Cost
+
+Pennies/month for typical demo traffic:
+- S3 storage: ~$0.025/GB; logs compress to <100 KB/day for low traffic
+- Athena: $5 per TB scanned; each interactive query scans <1 MB
+
 ## Teardown
 
 ```bash
 terraform destroy   # ~5 min; zero ongoing cost after
 ```
+
+Note: `force_destroy = true` on the log + artefact buckets means
+`terraform destroy` succeeds even with content still in them. Drop
+that flag for production.
 
 ## Cost when running
 

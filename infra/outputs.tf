@@ -98,3 +98,8 @@ output "s3_artefacts_bucket" {
   value       = aws_s3_bucket.artefacts.bucket
   description = "Bucket holding model.pkl + RAG parquets. Backend downloads on boot; GHA + laptop scripts upload here."
 }
+
+output "s3_alb_logs_bucket" {
+  value       = aws_s3_bucket.alb_logs.bucket
+  description = "Bucket receiving ALB access logs. Queryable via Athena -- see infra/README.md."
+}
