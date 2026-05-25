@@ -85,25 +85,6 @@ variable "tavily_api_key" {
   default     = ""
 }
 
-variable "azure_openai_api_key" {
-  description = "Azure OpenAI API key. Used for query-time embeddings (RAG retrievers) regardless of LLM_PROVIDER."
-  type        = string
-  sensitive   = true
-  default     = ""
-}
-
-variable "azure_openai_endpoint" {
-  description = "Azure OpenAI endpoint URL (e.g. https://<resource>.openai.azure.com/openai/v1/)."
-  type        = string
-  default     = ""
-}
-
-variable "azure_openai_embed_model" {
-  description = "Azure OpenAI embedding deployment name."
-  type        = string
-  default     = "text-embedding-3-small"
-}
-
 locals {
   name = "${var.project}-${var.env}"
 }

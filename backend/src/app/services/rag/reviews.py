@@ -11,7 +11,7 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
-from src.app.services.ai_client import embed_model, get_openai_client
+from src.app.services.embed import embed_query as embed_query_via_bedrock
 from src.settings import settings
 
 log = logging.getLogger(__name__)
@@ -60,17 +60,11 @@ def _corpus() -> tuple[pd.DataFrame, np.ndarray] | None:
 
 
 def _embed_query(query: str) -> np.ndarray | None:
-    if not settings.azure_openai_api_key:
+    vec = embed_query_via_bedrock(query)
+    if vec is None:
         return None
-    try:
-        client = get_openai_client()
-        resp = client.embeddings.create(model=embed_model(), input=[query])
-        vec = np.array(resp.data[0].embedding, dtype=np.float32)
-        norm = np.linalg.norm(vec)
-        return vec / norm if norm else vec
-    except Exception as exc:  # noqa: BLE001
-        log.warning("Query embedding failed (%s)", exc)
-        return None
+    norm = np.linalg.norm(vec)
+    return vec / norm if norm else vec
 
 
 def _to_float(x: Any) -> float | None:

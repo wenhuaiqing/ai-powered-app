@@ -95,12 +95,6 @@ async def run(state: GraphState, inputs: dict[str, Any]) -> LeadTriageResult:
 
     await emit("tool_call", {"node": "lead_triage", "tool": "summarise", "args": {"lead_id": lead.get("lead_id")}})
 
-    if settings.llm_provider == "azure" and not settings.azure_openai_api_key:
-        result = _fallback_triage(lead)
-        await emit("tool_result", {"node": "lead_triage", "tool": "summarise",
-                                    "preview": "(no LLM) heuristic triage"})
-        return result
-
     try:
         parsed = chat_structured(
             messages=[
