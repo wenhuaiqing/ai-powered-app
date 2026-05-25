@@ -64,7 +64,16 @@ resource "aws_lb" "main" {
   enable_deletion_protection = false  # demo
   idle_timeout               = 180     # match SSE proxy_read_timeout
 
+  # Every HTTP request gets logged as a line in S3 (see infra/alb_logs.tf).
+  # Athena queries the bucket directly -- see infra/README.md.
+  access_logs {
+    bucket  = aws_s3_bucket.alb_logs.id
+    enabled = true
+  }
+
   tags = { Name = "${local.name}-alb" }
+
+  depends_on = [aws_s3_bucket_policy.alb_logs]
 }
 
 resource "aws_lb_target_group" "backend" {
