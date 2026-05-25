@@ -10,7 +10,9 @@ three-tier eval suite with a CI gate.
 
 > Status: **Phase 1 + Phase 2 shipped.** Live on AWS Fargate, fronted by an ALB,
 > backed by RDS MySQL + DuckDB, talking to AWS Bedrock for chat. Deploys land
-> via GitHub Actions OIDC (no static AWS keys in CI). 52 Tier-1 tests green.
+> via GitHub Actions OIDC (no static AWS keys in CI). **52 Tier-1 tests green,
+> 7/7 Tier-3 smoke evals passing against the live cloud URL** (see
+> [`evals/results/`](evals/results/)).
 >
 > **Live demo:** http://ai-powered-app-demo-alb-348711113.ap-southeast-2.elb.amazonaws.com
 > (HTTP only — ACM cert is a Phase 2 polish item; demo URL spins down between recruiter sessions to avoid AWS spend).
