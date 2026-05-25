@@ -3,7 +3,11 @@ description: Platform-meta question routes the catch-all General agent — no sp
 prompt: "How does this app work? What can you do for me?"
 expected_agents:
   - general
+# "agent" is the keyword that's hard for any reasonable General response to
+# omit -- the agent's job is to introduce the other specialist agents.
+# Earlier "module" assertion was too gpt-4o-specific; Bedrock Claude
+# tends to say "feature" or "platform" instead, which is still correct.
 expected_facts:
-  - "module"
+  - "agent"
 anti_facts: []
 tier3: true
