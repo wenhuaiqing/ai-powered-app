@@ -8,10 +8,13 @@ ship: LangGraph multi-agent orchestration, RAG, text-to-DuckDB, live web
 search, a RandomForest valuation model, structured-output contracts, and a
 three-tier eval suite with a CI gate.
 
-> Status: **Phase 1 + Phase 2 shipped.** Live on AWS Fargate, fronted by an ALB,
-> backed by RDS MySQL + DuckDB, talking to AWS Bedrock for chat. Deploys land
-> via GitHub Actions OIDC (no static AWS keys in CI). **52 Tier-1 tests green,
-> 7/7 Tier-3 smoke evals passing against the live cloud URL** (see
+> Status: **Phase 1 + Phase 2 (all 6 steps) shipped.** Live on AWS Fargate,
+> fronted by an ALB, backed by RDS MySQL + DuckDB, talking to **AWS Bedrock
+> for chat (Claude Sonnet 4.6) AND embeddings (Titan v2)** with the model +
+> RAG parquets served from S3. **Zero non-AWS LLM dependency** at runtime;
+> the only third party is Tavily for live web search. Deploys land via
+> GitHub Actions OIDC (no static AWS keys in CI). **50 Tier-1 tests green,
+> 7/7 Tier-3 smoke evals passing against the live AWS-native URL** (see
 > [`evals/results/`](evals/results/)).
 >
 > **Live demo:** http://ai-powered-app-demo-alb-348711113.ap-southeast-2.elb.amazonaws.com
@@ -118,11 +121,11 @@ three-tier eval suite with a CI gate.
 ```
 
 - **Backend**: FastAPI + LangGraph + Pydantic + DuckDB + MySQL (OLTP via
-  SQLAlchemy + PyMySQL) + scikit-learn + Tavily. LLM provider is a runtime
-  toggle (`LLM_PROVIDER=azure|bedrock`) — Azure OpenAI via the `openai` SDK
-  for dev, AWS Bedrock (Claude Sonnet 4.6 via boto3 `converse`) for the
-  AWS-native deploy. Static system prompts are cached on the Bedrock side
-  via `cachePoint` so repeat agent calls hit the prompt cache.
+  SQLAlchemy + PyMySQL) + scikit-learn + Tavily. **LLM + embeddings both
+  on AWS Bedrock** — Claude Sonnet 4.6 (`converse` API with forced tool
+  use for structured outputs) + Titan Embed v2 (1024-D). Static system
+  prompts are cached on the Bedrock side via `cachePoint` so repeat agent
+  calls hit the 5-min prompt cache.
 
 ## AWS deployment topology
 
@@ -166,17 +169,22 @@ three-tier eval suite with a CI gate.
    │                                ▼                                  │
    │      ┌──────────────────┐  ┌──────────────────┐                  │
    │      │   AWS Bedrock    │  │ Secrets Manager  │                  │
-   │      │ Claude Sonnet 4.6│  │ (db, tavily,     │                  │
-   │      │ au. inference    │  │  azure-openai)   │                  │
-   │      │ profile          │  └──────────────────┘                  │
+   │      │ Claude Sonnet 4.6│  │ (db creds,       │                  │
+   │      │ + Titan Embed v2 │  │  tavily-api-key) │                  │
+   │      │ (au. profiles)   │  └──────────────────┘                  │
    │      └──────────────────┘                                        │
    │                                                                   │
    │      ┌──────────────────┐  ┌──────────────────┐                  │
-   │      │  CloudWatch Logs │  │  ECR (2 repos)   │                  │
-   │      │  (30d retention) │  │  + scan on push  │                  │
-   │      └──────────────────┘  └──────────────────┘                  │
+   │      │   S3 artefacts   │  │  CloudWatch Logs │                  │
+   │      │  model.pkl +     │  │  (30d retention) │                  │
+   │      │  RAG parquets    │  └──────────────────┘                  │
+   │      │  (versioned)     │                                         │
+   │      └──────────────────┘  ┌──────────────────┐                  │
+   │                            │  ECR (2 repos)   │                  │
+   │                            │  + scan on push  │                  │
+   │                            └──────────────────┘                  │
    │                                                                   │
-   │     (Outbound also: Tavily.com, Azure OpenAI for embeddings)     │
+   │     (Outbound also: Tavily.com for Market Watch)                 │
    └──────────────────────────────────────────────────────────────────┘
                                  ▲
                                  │
@@ -200,11 +208,14 @@ tags → registers a new task definition revision (patches just the image URI)
 minutes. Terraform manages the durable infra (VPC, RDS, IAM, ECS service
 shape); the GHA workflow only ever changes the image inside the task def.
 
-**Data flow on backend boot:** Container starts → runs
-`scripts/etl_mysql_to_duckdb.py` against RDS (~3s) → builds a local
-`/app/data/platform.duckdb` → execs uvicorn. Each Fargate replica
-maintains its own DuckDB; MySQL is the single source of truth for OLTP
-data (properties, leads, agent_runs, lead_events).
+**Data flow on backend boot:** Container starts →
+`scripts/download_artefacts.py` pulls `model.pkl` + RAG parquets from
+S3 (~3s) → `scripts/etl_mysql_to_duckdb.py` rebuilds the analytical
+DuckDB from RDS (~3s) → execs uvicorn. Cold start: ~6-8s before
+`/health` returns 200. Each Fargate replica maintains its own DuckDB +
+its own local copy of the model files; MySQL is the single source of
+truth for OLTP data (properties, leads, agent_runs, lead_events); S3
+is the single source of truth for the trained model + RAG corpora.
 
 ## Phase 2 status
 
@@ -216,7 +227,7 @@ data (properties, leads, agent_runs, lead_events).
 | 3 | Compute Terraform (ECR + ALB + ECS services + OIDC) | ✓ shipped |
 | 4 | GitHub Actions deploy workflow | ✓ shipped |
 | 5 | Data artefacts + runtime secrets baked in | ✓ shipped |
-| 6 | Move data to S3 + drop Azure (rebuild parquets on Bedrock Titan) | deferred |
+| 6 | S3 artefact bucket + Bedrock Titan embeddings + Azure dropped | ✓ shipped |
 - **Frontend**: React 18 + Vite 5 + React Router 7 + Recharts + Leaflet +
   `react-ai-orb` (custom PlasmaOrb visual) + lucide-react.
 - **AI contracts**: every node emits a typed Pydantic model. The graph state
@@ -338,9 +349,11 @@ ai-powered-app/
 │   ├── build_db.py                   Legacy DuckDB-only build (CI fallback)
 │   ├── train_model.py                RandomForest training
 │   ├── stage_regulation_corpus.py    Writes 20 NSW regulation .md files
-│   ├── build_regulation_corpus.py    Chunks + embeds via Azure
-│   └── build_review_embeddings.py    Embeds 421 suburb cards
-├── infra/                            Terraform — VPC + RDS MySQL + Secrets + seed ECS task (Phase 2 step 0)
+│   ├── build_regulation_corpus.py    Chunks + embeds via Bedrock Titan v2
+│   ├── build_review_embeddings.py    Embeds 421 suburb cards (Titan v2)
+│   ├── download_artefacts.py         Backend boot — pull model + parquets from S3
+│   └── upload_artefacts_to_s3.py     Local dev — push rebuilt artefacts to S3
+├── infra/                            Terraform — VPC + RDS + ALB + ECS + ECR + S3 + Secrets + OIDC (Phase 2)
 ├── backend/Dockerfile                Multi-stage uv build → slim runtime (Phase 2 step 2)
 ├── frontend/Dockerfile               Vite build → nginx with SPA fallback + /api proxy
 ├── frontend/nginx.conf               Server-level root, SSE-friendly proxy_buffering off
@@ -352,17 +365,19 @@ ai-powered-app/
 
 ## Run locally
 
-You need an Azure OpenAI deployment for the LLM calls and a Tavily key for
-Market Watch + Compliance web fallback. Copy `.env.example` to `.env` and
-fill in:
+You need AWS credentials with Bedrock access (`aws configure` is fine)
+and a Tavily key for Market Watch + Compliance web fallback. Copy
+`.env.example` to `.env` and fill in:
 
 ```env
-AZURE_OPENAI_ENDPOINT=https://<resource>.openai.azure.com/openai/v1/
-AZURE_OPENAI_API_KEY=<your key>
-AZURE_OPENAI_CHAT_MODEL=<deployment name, e.g. gpt-4o>
-AZURE_OPENAI_EMBED_MODEL=text-embedding-3-small
+AWS_REGION=ap-southeast-2
+BEDROCK_CHAT_MODEL=au.anthropic.claude-sonnet-4-6
+BEDROCK_EMBED_MODEL=amazon.titan-embed-text-v2:0
 TAVILY_API_KEY=<get a free one at tavily.com>
 ```
+
+Enable Bedrock model access for Claude Sonnet 4.6 + Titan Embed v2 in
+the AWS console before running anything — see [infra/README.md](infra/README.md).
 
 Then:
 
@@ -389,7 +404,7 @@ npm run dev   # http://localhost:5173
 
 # Tier-1 pytest
 cd backend
-uv run pytest                         # 52 tests, ~10s
+uv run pytest                         # 50 tests, ~10s
 
 # Tier-3 eval smoke (against the running backend)
 uv run python ../evals/run.py --tier smoke
@@ -501,7 +516,7 @@ The pieces that show this is more than a happy-path demo:
   `WITH ... AS (...)` name extraction. Catches injection in `tests/agents/
   test_sql_validator.py`.
 - **Three-tier evals**:
-  - Tier 1 — `pytest backend/tests/` (52 cases, ~10s, runs every commit).
+  - Tier 1 — `pytest backend/tests/` (50 cases, ~10s, runs every commit).
   - Tier 2 — `evals/run.py --tier full` (14 golden cases + LLM-judge rubric).
   - Tier 3 — `.github/workflows/evals-smoke.yml` PR gate (7 cases, string
     assertions, no judge cost).
@@ -516,12 +531,13 @@ The pieces that show this is more than a happy-path demo:
   Reapit AI SVG (`#4856EA` indigo, `#0BAAB2` teal, `#D1263D` red, `#FD9E1D`
   orange). Real Reapit favicon + RAI logo. Mobile View toggle pill has the
   same red sweep + heartbeat as the dashboard hint.
-- **Provider-agnostic LLM layer** — every agent calls `chat_structured(...)`
-  / `chat_text(...)` from `services/llm.py`, which dispatches to Azure
-  OpenAI or AWS Bedrock based on `LLM_PROVIDER`. The Bedrock path uses
+- **Bedrock-native LLM layer** — every agent calls `chat_structured(...)`
+  / `chat_text(...)` from `services/llm.py`, which delegates to Bedrock
   `converse` with forced tool-use for structured outputs and appends a
   `cachePoint` after the system blocks so the 50-150 line agent system
-  prompts get cached (5-min TTL) on the Bedrock side.
+  prompts get cached (5-min TTL) on the Bedrock side. Embeddings use
+  the matching Bedrock Titan v2 wrapper in `services/embed.py` — same
+  account, same region, no Azure runtime dependency.
 - **Real AWS deploy** with infra-as-code and hands-free CI/CD. ~600 lines of
   Terraform under `infra/` provision VPC + 2 AZs + RDS MySQL in private
   subnets + ALB + ECR + ECS Fargate services + Secrets Manager + GitHub
@@ -551,13 +567,9 @@ verification checklist.
 
 ## What's still deferred
 
-Phase 2 shipped. These are honest follow-ups, not blockers:
+Phase 2 fully shipped (all 6 steps). These are honest follow-ups, not
+blockers:
 
-- **Phase 2 step 6 — fully AWS-native**. Move `data/model.pkl` + the RAG
-  parquets to an S3 bucket, have the backend download on boot. Re-embed the
-  reviews + regulations corpora with Bedrock Titan v2 (1024-D) so the Azure
-  OpenAI dependency drops entirely. Pure AWS + Tavily after that. ~half a
-  day.
 - **HTTPS + custom domain**. ACM cert + Route 53 A record + ALB HTTPS
   listener with HTTP→HTTPS redirect. ~30 min once a domain is parked.
 - **Observability upgrade**. LangSmith or OpenTelemetry tracing so every

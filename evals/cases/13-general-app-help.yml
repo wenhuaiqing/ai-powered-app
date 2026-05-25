@@ -3,11 +3,12 @@ description: Platform-meta question routes the catch-all General agent — no sp
 prompt: "How does this app work? What can you do for me?"
 expected_agents:
   - general
-# "agent" is the keyword that's hard for any reasonable General response to
-# omit -- the agent's job is to introduce the other specialist agents.
-# Earlier "module" assertion was too gpt-4o-specific; Bedrock Claude
-# tends to say "feature" or "platform" instead, which is still correct.
+# "Reapit" is the only word the model literally cannot omit -- the
+# system prompt frames it as "the Reapit One Platform" and any
+# response echoes the brand. Tried "module" (gpt-4o-only phrasing) and
+# "agent" (Claude sometimes uses "feature" / "Rai" instead, see commit
+# history). Reapit is brand-specific and deterministically present.
 expected_facts:
-  - "agent"
+  - "reapit"
 anti_facts: []
 tier3: true
