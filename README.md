@@ -8,9 +8,12 @@ ship: LangGraph multi-agent orchestration, RAG, text-to-DuckDB, live web
 search, a RandomForest valuation model, structured-output contracts, and a
 three-tier eval suite with a CI gate.
 
-> Status: **22 commits across Phase 1**, feature-complete on desktop + mobile,
-> end-to-end demo working with Azure OpenAI + Tavily wired in. Phase 2 (AWS
-> migration) deferred.
+> Status: **Phase 1 + Phase 2 shipped.** Live on AWS Fargate, fronted by an ALB,
+> backed by RDS MySQL + DuckDB, talking to AWS Bedrock for chat. Deploys land
+> via GitHub Actions OIDC (no static AWS keys in CI). 52 Tier-1 tests green.
+>
+> **Live demo:** http://ai-powered-app-demo-alb-348711113.ap-southeast-2.elb.amazonaws.com
+> (HTTP only — ACM cert is a Phase 2 polish item; demo URL spins down between recruiter sessions to avoid AWS spend).
 
 ---
 
@@ -118,6 +121,100 @@ three-tier eval suite with a CI gate.
   for dev, AWS Bedrock (Claude Sonnet 4.6 via boto3 `converse`) for the
   AWS-native deploy. Static system prompts are cached on the Bedrock side
   via `cachePoint` so repeat agent calls hit the prompt cache.
+
+## AWS deployment topology
+
+```
+                              INTERNET
+                                 │
+                                 ▼
+   ┌────────────────────────────────────────────────────────────────┐
+   │  AWS account 766265104419 / region ap-southeast-2 (Sydney)     │
+   │                                                                 │
+   │  ┌─────────────────────────────────────────────────────────┐   │
+   │  │           VPC  10.40.0.0/16  (2 AZs)                    │   │
+   │  │                                                          │   │
+   │  │  ┌─ PUBLIC SUBNETS (a / b) ────────────────────────┐    │   │
+   │  │  │    Internet Gateway                              │    │   │
+   │  │  │    │                                             │    │   │
+   │  │  │    ▼                                             │    │   │
+   │  │  │  ┌──────────────────┐   ┌──────────────┐         │    │   │
+   │  │  │  │ Application Load │   │ NAT Gateway  │         │    │   │
+   │  │  │  │ Balancer (HTTP)  │   │ + EIP        │         │    │   │
+   │  │  │  └────────┬─────────┘   └──────┬───────┘         │    │   │
+   │  │  └───────────┼────────────────────┼─────────────────┘    │   │
+   │  │              │ path /api,/orb,/health      │              │   │
+   │  │              │ -> backend                  │              │   │
+   │  │              │ else -> frontend            │              │   │
+   │  │              ▼                              ▼              │   │
+   │  │  ┌─ PRIVATE SUBNETS (a / b) ──────────────────────────┐  │   │
+   │  │  │                                                     │  │   │
+   │  │  │  ┌──────────────┐   ┌──────────────┐   ┌───────┐   │  │   │
+   │  │  │  │  Fargate     │   │  Fargate     │   │  RDS  │   │  │   │
+   │  │  │  │  backend:1   │◄──┤  frontend:1  │   │ MySQL │   │  │   │
+   │  │  │  │  (FastAPI)   │   │  (nginx SPA) │   │  8.0  │   │  │   │
+   │  │  │  │  512 cpu     │   │  256 cpu     │   │ t4g.μ │   │  │   │
+   │  │  │  │  1 GiB       │   │  512 MiB     │   │       │   │  │   │
+   │  │  │  └──────┬───────┘   └──────────────┘   └───▲───┘   │  │   │
+   │  │  │         │                                  │       │  │   │
+   │  │  │         └───────  reads/writes ────────────┘       │  │   │
+   │  │  └──────────────────────────┬──────────────────────────┘  │   │
+   │  └─────────────────────────────┼──────────────────────────────┘  │
+   │                                │ outbound only (via NAT)         │
+   │                                ▼                                  │
+   │      ┌──────────────────┐  ┌──────────────────┐                  │
+   │      │   AWS Bedrock    │  │ Secrets Manager  │                  │
+   │      │ Claude Sonnet 4.6│  │ (db, tavily,     │                  │
+   │      │ au. inference    │  │  azure-openai)   │                  │
+   │      │ profile          │  └──────────────────┘                  │
+   │      └──────────────────┘                                        │
+   │                                                                   │
+   │      ┌──────────────────┐  ┌──────────────────┐                  │
+   │      │  CloudWatch Logs │  │  ECR (2 repos)   │                  │
+   │      │  (30d retention) │  │  + scan on push  │                  │
+   │      └──────────────────┘  └──────────────────┘                  │
+   │                                                                   │
+   │     (Outbound also: Tavily.com, Azure OpenAI for embeddings)     │
+   └──────────────────────────────────────────────────────────────────┘
+                                 ▲
+                                 │
+                                 │  GitHub Actions OIDC
+                                 │  (no static keys)
+                                 │  on push to main:
+                                 │   1. build + push ECR
+                                 │   2. register new task def revision
+                                 │   3. update ECS service, wait for stable
+                                 │
+                       ┌─────────┴─────────┐
+                       │  GitHub Actions   │
+                       │  deploy.yml       │
+                       └───────────────────┘
+```
+
+**Deploy flow:** `git push main` → GHA assumes `gha-deploy` IAM role via OIDC
+→ builds backend + frontend images → pushes to ECR with `:<sha>` + `:latest`
+tags → registers a new task definition revision (patches just the image URI)
+→ `aws ecs update-service` with `wait-for-service-stability`. Round-trip ~5
+minutes. Terraform manages the durable infra (VPC, RDS, IAM, ECS service
+shape); the GHA workflow only ever changes the image inside the task def.
+
+**Data flow on backend boot:** Container starts → runs
+`scripts/etl_mysql_to_duckdb.py` against RDS (~3s) → builds a local
+`/app/data/platform.duckdb` → execs uvicorn. Each Fargate replica
+maintains its own DuckDB; MySQL is the single source of truth for OLTP
+data (properties, leads, agent_runs, lead_events).
+
+## Phase 2 status
+
+| Step | What | Status |
+|---|---|---|
+| 0 | MySQL OLTP layer + ETL pipeline + RDS Terraform | ✓ shipped |
+| 1 | Bedrock provider toggle + prompt caching | ✓ shipped |
+| 2 | Backend + frontend Dockerfiles + docker-compose | ✓ shipped |
+| 3 | Compute Terraform (ECR + ALB + ECS services + OIDC) | ✓ shipped |
+| 4 | GitHub Actions deploy workflow | ✓ shipped |
+| 5 | Data artefacts + runtime secrets baked in | ✓ shipped |
+| 6 | Move data to S3 + drop Azure (rebuild parquets on Bedrock Titan) | deferred |
 - **Frontend**: React 18 + Vite 5 + React Router 7 + Recharts + Leaflet +
   `react-ai-orb` (custom PlasmaOrb visual) + lucide-react.
 - **AI contracts**: every node emits a typed Pydantic model. The graph state
@@ -290,7 +387,7 @@ npm run dev   # http://localhost:5173
 
 # Tier-1 pytest
 cd backend
-uv run pytest                         # 42 tests, ~10s
+uv run pytest                         # 52 tests, ~10s
 
 # Tier-3 eval smoke (against the running backend)
 uv run python ../evals/run.py --tier smoke
@@ -402,7 +499,7 @@ The pieces that show this is more than a happy-path demo:
   `WITH ... AS (...)` name extraction. Catches injection in `tests/agents/
   test_sql_validator.py`.
 - **Three-tier evals**:
-  - Tier 1 — `pytest backend/tests/` (42 cases, ~10s, runs every commit).
+  - Tier 1 — `pytest backend/tests/` (52 cases, ~10s, runs every commit).
   - Tier 2 — `evals/run.py --tier full` (14 golden cases + LLM-judge rubric).
   - Tier 3 — `.github/workflows/evals-smoke.yml` PR gate (7 cases, string
     assertions, no judge cost).
@@ -423,6 +520,20 @@ The pieces that show this is more than a happy-path demo:
   `converse` with forced tool-use for structured outputs and appends a
   `cachePoint` after the system blocks so the 50-150 line agent system
   prompts get cached (5-min TTL) on the Bedrock side.
+- **Real AWS deploy** with infra-as-code and hands-free CI/CD. ~600 lines of
+  Terraform under `infra/` provision VPC + 2 AZs + RDS MySQL in private
+  subnets + ALB + ECR + ECS Fargate services + Secrets Manager + GitHub
+  OIDC trust. `.github/workflows/deploy.yml` assumes a scoped IAM role via
+  OIDC (no static AWS keys in GitHub), builds + pushes both images,
+  registers a new task definition revision, rolls the ECS service with
+  `wait-for-service-stability`. Round-trip ~5 min per push to main.
+- **OLTP + OLAP split with a real pipeline**. Properties + leads + listings
+  + agent_runs + lead_events live in RDS MySQL (transactional, normalised,
+  audit log on lead status transitions, every Rai prompt persisted).
+  Analytical queries hit a local DuckDB rebuilt from MySQL on every backend
+  boot via `scripts/etl_mysql_to_duckdb.py`. The Dashboard "Recent agent
+  activity" feed is the visible loop — fire a Rai prompt, watch the row
+  land in the feed within seconds.
 
 ## Plan of record
 
@@ -436,20 +547,26 @@ C:\Users\Owen.Wen\.claude\plans\under-misc-folder-each-quiet-starfish.md
 Read that for the design rationale, the agent inputs/outputs spec, and the
 verification checklist.
 
-## What's not done (Phase 2)
+## What's still deferred
 
-Deliberately deferred — none of these are blocking for an interview demo,
-but they're the natural next chunks:
+Phase 2 shipped. These are honest follow-ups, not blockers:
 
-- **AWS migration**. `LLM_PROVIDER=bedrock|azure` toggle in `ai_client.py`,
-  Terraform under `infra/` (ECR + ECS Fargate + ALB + Secrets Manager +
-  CloudWatch), GitHub Actions OIDC build/push/deploy.
-- **Production observability**. LangSmith or OpenTelemetry tracing so every
-  node + tool call + retry shows up in a real dashboard (stdout JSON works
-  today).
+- **Phase 2 step 6 — fully AWS-native**. Move `data/model.pkl` + the RAG
+  parquets to an S3 bucket, have the backend download on boot. Re-embed the
+  reviews + regulations corpora with Bedrock Titan v2 (1024-D) so the Azure
+  OpenAI dependency drops entirely. Pure AWS + Tavily after that. ~half a
+  day.
+- **HTTPS + custom domain**. ACM cert + Route 53 A record + ALB HTTPS
+  listener with HTTP→HTTPS redirect. ~30 min once a domain is parked.
+- **Observability upgrade**. LangSmith or OpenTelemetry tracing so every
+  node + tool call + retry shows up in a real dashboard (stdout JSON
+  through CloudWatch works today).
 - **Eval trend page** inside the app — reads `evals/results/*.json` and
   trends pass-rate-per-day with sparklines.
-- **Drag-to-close** on the mobile bottom sheet (Phase B polish).
+- **Drag-to-close** on the mobile bottom sheet (UX polish).
+- **Multi-AZ RDS + autoscaling Fargate + WAF** — overkill for a portfolio
+  demo, deliberately omitted with cost trade-offs documented in
+  [`infra/README.md`](infra/README.md).
 
 ## Credits
 
