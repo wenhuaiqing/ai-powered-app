@@ -60,9 +60,6 @@ async def recent_runs(limit: int = Query(15, ge=1, le=50)) -> dict[str, Any]:
             except json.JSONDecodeError:
                 item["agents_called"] = []
         item["used_web_search"] = bool(item.get("used_web_search"))
-        if item.get("created_at"):
-            # MySQL DATETIME has no timezone; the server runs in UTC, so we
-            # mark the string as UTC. The browser then converts to local
-            # time when computing "Xm ago".
-            item["created_at"] = item["created_at"].isoformat() + "Z"
+        # created_at is already normalised to an ISO+Z string by
+        # mysql_client._coerce.
     return {"items": items, "count": len(items)}
