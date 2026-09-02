@@ -88,6 +88,7 @@ resource "azurerm_container_app" "backend" {
   ingress {
     external_enabled           = false # internal only
     target_port                = 8000
+    transport                  = "http" # force HTTP/1.1 - Envoy's auto mode 426s nginx's proxy
     allow_insecure_connections = true # nginx proxies plain http inside the env
     traffic_weight {
       latest_revision = true
