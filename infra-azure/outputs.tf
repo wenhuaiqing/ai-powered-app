@@ -1,0 +1,47 @@
+output "frontend_url" {
+  description = "The public demo URL (managed TLS included)."
+  value       = "https://${azurerm_container_app.frontend.ingress[0].fqdn}"
+}
+
+output "backend_internal_fqdn" {
+  description = "Backend internal FQDN (reachable only inside the ACA environment)."
+  value       = azurerm_container_app.backend.ingress[0].fqdn
+}
+
+output "artefact_base_url" {
+  description = "Public-read blob base URL for model + parquet artefacts."
+  value       = "${azurerm_storage_account.artefacts.primary_blob_endpoint}${azurerm_storage_container.artefacts.name}"
+}
+
+output "storage_account_name" {
+  value = azurerm_storage_account.artefacts.name
+}
+
+output "mysql_fqdn" {
+  value = azurerm_mysql_flexible_server.main.fqdn
+}
+
+output "mysql_admin_login" {
+  value = azurerm_mysql_flexible_server.main.administrator_login
+}
+
+output "mysql_password" {
+  value     = random_password.mysql.result
+  sensitive = true
+}
+
+# Values for GitHub repo secrets (deploy workflow's azure/login):
+output "gha_client_id" {
+  description = "Set as repo secret AZURE_CLIENT_ID."
+  value       = azurerm_user_assigned_identity.gha.client_id
+}
+
+output "tenant_id" {
+  description = "Set as repo secret AZURE_TENANT_ID."
+  value       = data.azurerm_client_config.current.tenant_id
+}
+
+output "subscription_id" {
+  description = "Set as repo secret AZURE_SUBSCRIPTION_ID."
+  value       = data.azurerm_client_config.current.subscription_id
+}

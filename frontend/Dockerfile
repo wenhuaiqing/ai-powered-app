@@ -21,7 +21,13 @@ RUN npm run build
 FROM nginx:1.27-alpine AS runtime
 
 COPY --from=builder /app/dist /usr/share/nginx/html
-COPY frontend/nginx.conf /etc/nginx/conf.d/default.conf
+
+# nginx.conf is an envsubst template: the official image renders
+# /etc/nginx/templates/*.template -> /etc/nginx/conf.d/ at startup,
+# substituting ${BACKEND_UPSTREAM}. Default suits docker-compose;
+# Azure Container Apps overrides it with the backend's internal FQDN.
+ENV BACKEND_UPSTREAM=backend:8000
+COPY frontend/nginx.conf /etc/nginx/templates/default.conf.template
 
 # nginx:alpine listens on 80 by default; expose for clarity.
 EXPOSE 80
