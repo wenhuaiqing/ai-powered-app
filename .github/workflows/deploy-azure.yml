@@ -86,21 +86,20 @@ jobs:
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
-      - name: Roll backend
+      - name: Roll both containers (one app, sidecar layout)
         run: |
           az containerapp update \
-            --name backend \
+            --name app \
             --resource-group "$RESOURCE_GROUP" \
+            --container-name backend \
             --image "${{ needs.build-and-push.outputs.backend_image }}"
-
-      - name: Roll frontend
-        run: |
           az containerapp update \
-            --name frontend \
+            --name app \
             --resource-group "$RESOURCE_GROUP" \
+            --container-name frontend \
             --image "${{ needs.build-and-push.outputs.frontend_image }}"
 
       - name: Print demo URL
         run: |
-          az containerapp show --name frontend --resource-group "$RESOURCE_GROUP" \
+          az containerapp show --name app --resource-group "$RESOURCE_GROUP" \
             --query properties.configuration.ingress.fqdn -o tsv
