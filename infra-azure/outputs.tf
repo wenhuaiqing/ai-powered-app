@@ -1,11 +1,6 @@
 output "frontend_url" {
   description = "The public demo URL (managed TLS included)."
-  value       = "https://${azurerm_container_app.frontend.ingress[0].fqdn}"
-}
-
-output "backend_internal_fqdn" {
-  description = "Backend internal FQDN (reachable only inside the ACA environment)."
-  value       = azurerm_container_app.backend.ingress[0].fqdn
+  value       = "https://${azurerm_container_app.app.ingress[0].fqdn}"
 }
 
 output "artefact_base_url" {
