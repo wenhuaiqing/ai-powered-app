@@ -47,6 +47,9 @@ data/regulations/*
 evals/results/*
 !evals/results/.gitkeep
 
+# Local-only scratch data. Never commit.
+.ignore/
+
 # IDE
 .vscode/
 .idea/
@@ -63,3 +66,6 @@ infra/terraform.tfstate
 infra/terraform.tfstate.*
 infra/*.tfplan
 infra/.terraform.tfstate.lock.info
+
+# Terraform working dirs - provider binaries must never be committed
+**/.terraform/

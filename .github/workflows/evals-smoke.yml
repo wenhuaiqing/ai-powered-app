@@ -17,16 +17,17 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
 
+    permissions:
+      contents: read
+      models: read # lets the built-in GITHUB_TOKEN call GitHub Models
+
     env:
-      # Backend can't run the agents without these — they belong in
-      # repository secrets. The Tier 3 smoke needs the real LLM in the
-      # loop because it asserts on actual planner output and answer
-      # content, not just heuristic routing.
-      AZURE_OPENAI_ENDPOINT:    ${{ secrets.AZURE_OPENAI_ENDPOINT }}
-      AZURE_OPENAI_API_KEY:     ${{ secrets.AZURE_OPENAI_API_KEY }}
-      AZURE_OPENAI_CHAT_MODEL:  ${{ secrets.AZURE_OPENAI_CHAT_MODEL }}
-      AZURE_OPENAI_EMBED_MODEL: ${{ secrets.AZURE_OPENAI_EMBED_MODEL }}
-      TAVILY_API_KEY:           ${{ secrets.TAVILY_API_KEY }}
+      # The Tier 3 smoke needs the real LLM in the loop because it
+      # asserts on actual planner output and answer content, not just
+      # heuristic routing. GitHub Models accepts the workflow's own
+      # GITHUB_TOKEN (models: read above) — no LLM secret required.
+      GITHUB_MODELS_TOKEN: ${{ github.token }}
+      TAVILY_API_KEY:      ${{ secrets.TAVILY_API_KEY }}
       PYTHONUTF8: "1"
 
     steps:

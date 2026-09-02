@@ -8,17 +8,18 @@ ship: LangGraph multi-agent orchestration, RAG, text-to-DuckDB, live web
 search, a RandomForest valuation model, structured-output contracts, and a
 three-tier eval suite with a CI gate.
 
-> Status: **Phase 1 + Phase 2 (all 6 steps) shipped.** Live on AWS Fargate,
-> fronted by an ALB, backed by RDS MySQL + DuckDB, talking to **AWS Bedrock
-> for chat (Claude Sonnet 4.6) AND embeddings (Titan v2)** with the model +
-> RAG parquets served from S3. **Zero non-AWS LLM dependency** at runtime;
-> the only third party is Tavily for live web search. Deploys land via
-> GitHub Actions OIDC (no static AWS keys in CI). **50 Tier-1 tests green,
-> 7/7 Tier-3 smoke evals passing against the live AWS-native URL** (see
+> Status: **Phase 1 + Phase 2 (all 6 steps) shipped.** Built and deployed
+> AWS-native - ECS Fargate fronted by an ALB, backed by RDS MySQL + DuckDB,
+> talking to **AWS Bedrock for chat (Claude Sonnet 4.6) AND embeddings
+> (Titan v2)** with the model + RAG parquets served from S3. Deploys land
+> via GitHub Actions OIDC (no static AWS keys in CI). **50 Tier-1 tests
+> green, 7/7 Tier-3 smoke evals passed against the live cloud URL** (see
 > [`evals/results/`](evals/results/)).
 >
-> **Live demo:** http://ai-powered-app-demo-alb-348711113.ap-southeast-2.elb.amazonaws.com
-> (HTTP only — ACM cert is a Phase 2 polish item; demo URL spins down between recruiter sessions to avoid AWS spend).
+> **Demo status:** the AWS deployment is currently offline (free credits
+> ran their course) - **an Azure migration is in progress** and the demo
+> URL will return there. Everything is reproducible from this repo:
+> `infra/` (Terraform) + the build scripts stand the whole platform up.
 
 ---
 

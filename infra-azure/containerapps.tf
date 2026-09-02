@@ -1,0 +1,197 @@
+# Container Apps: consumption plan, scale-to-zero.
+#
+# Topology mirrors the AWS design one abstraction level up:
+#   - frontend: PUBLIC ingress (the only public URL; free managed TLS).
+#     nginx serves the SPA and proxies /api, /orb, /health to the
+#     backend over the environment's internal DNS -- same-origin, so
+#     no CORS anywhere.
+#   - backend: INTERNAL ingress only -- unreachable from the internet,
+#     the ACA analogue of the AWS private subnet.
+# Secrets come from Key Vault via a user-assigned managed identity --
+# nothing sensitive in app config or images ("keys nowhere").
+
+resource "azurerm_container_app_environment" "main" {
+  name                       = "cae-${var.prefix}"
+  location                   = azurerm_resource_group.main.location
+  resource_group_name        = azurerm_resource_group.main.name
+  log_analytics_workspace_id = azurerm_log_analytics_workspace.main.id
+}
+
+# ---- identity + Key Vault -------------------------------------------
+
+resource "azurerm_user_assigned_identity" "backend" {
+  name                = "id-${var.prefix}-backend"
+  location            = azurerm_resource_group.main.location
+  resource_group_name = azurerm_resource_group.main.name
+}
+
+data "azurerm_client_config" "current" {}
+
+resource "azurerm_key_vault" "main" {
+  name                      = "kv-${var.prefix}-${random_string.storage_suffix.result}"
+  location                  = azurerm_resource_group.main.location
+  resource_group_name       = azurerm_resource_group.main.name
+  tenant_id                 = data.azurerm_client_config.current.tenant_id
+  sku_name                  = "standard"
+  rbac_authorization_enabled = true
+  purge_protection_enabled  = false
+}
+
+# Terraform (the operator) writes secrets.
+resource "azurerm_role_assignment" "kv_admin_self" {
+  scope                = azurerm_key_vault.main.id
+  role_definition_name = "Key Vault Administrator"
+  principal_id         = data.azurerm_client_config.current.object_id
+}
+
+# The backend's identity reads them.
+resource "azurerm_role_assignment" "kv_backend_read" {
+  scope                = azurerm_key_vault.main.id
+  role_definition_name = "Key Vault Secrets User"
+  principal_id         = azurerm_user_assigned_identity.backend.principal_id
+}
+
+resource "azurerm_key_vault_secret" "tavily" {
+  name         = "tavily-api-key"
+  value        = var.tavily_api_key
+  key_vault_id = azurerm_key_vault.main.id
+  depends_on   = [azurerm_role_assignment.kv_admin_self]
+}
+
+resource "azurerm_key_vault_secret" "github_models" {
+  name         = "github-models-token"
+  value        = var.github_models_token
+  key_vault_id = azurerm_key_vault.main.id
+  depends_on   = [azurerm_role_assignment.kv_admin_self]
+}
+
+resource "azurerm_key_vault_secret" "mysql_password" {
+  name         = "mysql-password"
+  value        = random_password.mysql.result
+  key_vault_id = azurerm_key_vault.main.id
+  depends_on   = [azurerm_role_assignment.kv_admin_self]
+}
+
+# ---- backend app (internal) -----------------------------------------
+
+resource "azurerm_container_app" "backend" {
+  name                         = "backend"
+  container_app_environment_id = azurerm_container_app_environment.main.id
+  resource_group_name          = azurerm_resource_group.main.name
+  revision_mode                = "Single"
+
+  identity {
+    type         = "UserAssigned"
+    identity_ids = [azurerm_user_assigned_identity.backend.id]
+  }
+
+  ingress {
+    external_enabled           = false # internal only
+    target_port                = 8000
+    allow_insecure_connections = true # nginx proxies plain http inside the env
+    traffic_weight {
+      latest_revision = true
+      percentage      = 100
+    }
+  }
+
+  secret {
+    name                = "tavily-api-key"
+    key_vault_secret_id = azurerm_key_vault_secret.tavily.id
+    identity            = azurerm_user_assigned_identity.backend.id
+  }
+  secret {
+    name                = "github-models-token"
+    key_vault_secret_id = azurerm_key_vault_secret.github_models.id
+    identity            = azurerm_user_assigned_identity.backend.id
+  }
+  secret {
+    name                = "mysql-password"
+    key_vault_secret_id = azurerm_key_vault_secret.mysql_password.id
+    identity            = azurerm_user_assigned_identity.backend.id
+  }
+
+  template {
+    min_replicas = 0 # scale to zero: the whole point
+    max_replicas = 1
+
+    container {
+      name   = "backend"
+      image  = var.backend_image
+      cpu    = 0.5
+      memory = "1Gi"
+
+      env {
+        name  = "ARTEFACT_BASE_URL"
+        value = "${azurerm_storage_account.artefacts.primary_blob_endpoint}${azurerm_storage_container.artefacts.name}"
+      }
+      env {
+        name  = "LLM_PROVIDER"
+        value = "github"
+      }
+      env {
+        name  = "EMBED_PROVIDER"
+        value = "github"
+      }
+      env {
+        name        = "GITHUB_MODELS_TOKEN"
+        secret_name = "github-models-token"
+      }
+      env {
+        name        = "TAVILY_API_KEY"
+        secret_name = "tavily-api-key"
+      }
+      env {
+        name  = "MYSQL_HOST"
+        value = azurerm_mysql_flexible_server.main.fqdn
+      }
+      env {
+        name  = "MYSQL_USER"
+        value = azurerm_mysql_flexible_server.main.administrator_login
+      }
+      env {
+        name        = "MYSQL_PASSWORD"
+        secret_name = "mysql-password"
+      }
+      env {
+        name  = "MYSQL_DATABASE"
+        value = azurerm_mysql_flexible_database.app.name
+      }
+    }
+  }
+}
+
+# ---- frontend app (the public front door) ---------------------------
+
+resource "azurerm_container_app" "frontend" {
+  name                         = "frontend"
+  container_app_environment_id = azurerm_container_app_environment.main.id
+  resource_group_name          = azurerm_resource_group.main.name
+  revision_mode                = "Single"
+
+  ingress {
+    external_enabled = true
+    target_port      = 80
+    traffic_weight {
+      latest_revision = true
+      percentage      = 100
+    }
+  }
+
+  template {
+    min_replicas = 0
+    max_replicas = 1
+
+    container {
+      name   = "frontend"
+      image  = var.frontend_image
+      cpu    = 0.25
+      memory = "0.5Gi"
+
+      env {
+        name  = "BACKEND_UPSTREAM"
+        value = azurerm_container_app.backend.ingress[0].fqdn
+      }
+    }
+  }
+}
