@@ -107,7 +107,23 @@ def _parse_sse_block(raw: str) -> dict[str, Any] | None:
 
 
 def run_case(case: dict[str, Any], backend: str) -> dict[str, Any]:
-    """POST to /orb/chat and drain SSE. Returns a flat dict of trace facts."""
+    """POST to /orb/chat and drain SSE, with one retry on transport failure.
+
+    Scale-to-zero hosting (Azure Container Apps) has brief windows during
+    scale transitions where the ingress returns an instant error page
+    instead of holding the request. One retry after a short pause rides
+    those out; steady-state cold starts are held by the platform itself.
+    """
+    result = _run_case_once(case, backend)
+    if result.get("error"):
+        time.sleep(10)
+        retry = _run_case_once(case, backend)
+        retry["retried"] = True
+        return retry
+    return result
+
+
+def _run_case_once(case: dict[str, Any], backend: str) -> dict[str, Any]:
     started = time.time()
     body = {"message": case["prompt"], "page_context": case["page_context"]}
 
@@ -278,6 +294,15 @@ def main() -> int:
     print(f"=== Tier {2 if args.tier == 'full' else 3} evaluation ===")
     print(f"Loaded {len(cases)} case{'' if len(cases) == 1 else 's'} from {CASES_DIR}")
     print(f"Backend: {args.backend}")
+    print()
+
+    # Warm-up: wake a scale-to-zero backend before the first case so
+    # case timings measure the graph, not the cold start.
+    try:
+        r = httpx.get(f"{args.backend}/health", timeout=120.0)
+        print(f"Warm-up /health: {r.status_code}")
+    except httpx.HTTPError as exc:
+        print(f"Warm-up /health failed ({exc}) - continuing anyway")
     print()
 
     summary = []
