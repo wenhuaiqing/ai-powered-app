@@ -1,7 +1,7 @@
 """Provider dispatcher tests.
 
 The dispatcher routes on settings.llm_provider:
-  "github" (default) -> services.github_chat
+  "openai" (default) -> services.openai_chat
   "bedrock"          -> services.bedrock_chat (legacy AWS path)
 
 We verify chat_structured / chat_text delegate to the right provider
@@ -14,7 +14,7 @@ from unittest.mock import patch
 
 from pydantic import BaseModel
 
-from src.app.services import github_chat, llm
+from src.app.services import llm, openai_chat
 from src.settings import settings
 
 
@@ -23,11 +23,11 @@ class _Greeting(BaseModel):
     confidence: float
 
 
-def test_chat_structured_delegates_to_github_by_default():
-    assert settings.llm_provider == "github"
+def test_chat_structured_delegates_to_openai_by_default():
+    assert settings.llm_provider == "openai"
     fake_parsed = _Greeting(text="hi", confidence=0.9)
 
-    with patch.object(github_chat, "chat_structured", return_value=fake_parsed) as mock:
+    with patch.object(openai_chat, "chat_structured", return_value=fake_parsed) as mock:
         result = llm.chat_structured(
             messages=[{"role": "user", "content": "hi"}],
             response_model=_Greeting,
@@ -42,18 +42,18 @@ def test_chat_structured_delegates_to_github_by_default():
     assert kwargs["model"] is None
 
 
-def test_chat_text_delegates_to_github_by_default():
-    with patch.object(github_chat, "chat_text", return_value="gh hi") as mock:
+def test_chat_text_delegates_to_openai_by_default():
+    with patch.object(openai_chat, "chat_text", return_value="oai hi") as mock:
         result = llm.chat_text(messages=[{"role": "user", "content": "hi"}])
 
-    assert result == "gh hi"
+    assert result == "oai hi"
     mock.assert_called_once()
 
 
 def test_chat_structured_passes_through_model_override():
     fake_parsed = _Greeting(text="x", confidence=0.5)
 
-    with patch.object(github_chat, "chat_structured", return_value=fake_parsed) as mock:
+    with patch.object(openai_chat, "chat_structured", return_value=fake_parsed) as mock:
         llm.chat_structured(
             messages=[{"role": "user", "content": "?"}],
             response_model=_Greeting,

@@ -1,22 +1,22 @@
-"""GitHub Models chat client (OpenAI-compatible API, free rate-limited tier).
+"""OpenAI-compatible chat client (Azure OpenAI via its /openai/v1 surface,
 
-Mirrors the structured-output + plain-text shape of bedrock_chat so the
-llm.py dispatcher can swap providers with a settings flag.
+or any endpoint speaking the OpenAI protocol). Mirrors the
+structured-output + plain-text shape of bedrock_chat so the llm.py
+dispatcher can swap providers with a settings flag.
 
 Structured outputs use the same pattern as the Bedrock path: declare a
 single tool whose parameters schema is the Pydantic model's JSON schema,
 force the model to call it via tool_choice, and validate the arguments.
 Falls back to JSON-mode prompting if the tool call comes back malformed.
 
-Auth is a GitHub token with the `models: read` permission:
-  - locally / in Azure: a fine-grained PAT in GITHUB_MODELS_TOKEN
-  - in GitHub Actions: the built-in GITHUB_TOKEN works (permissions:
-    models: read), so CI needs no extra secret.
+Configuration (settings / env):
+  LLM_BASE_URL    e.g. https://<resource>.openai.azure.com/openai/v1/
+  LLM_API_KEY     the endpoint's API key
+  LLM_CHAT_MODEL  deployment/model name (e.g. gpt-4-1-mini)
 
-Free-tier rate limits are real (per-minute and per-day, tiered by
-model). A 429 raises like any other failure -- callers already degrade:
+Any 429/5xx raises like any other failure -- callers already degrade:
 the planner falls back to keyword routing, agent nodes append NodeError
-and the run continues. That is the demo's rate-limit safety net.
+and the run continues. Graceful degradation is the demo's safety net.
 """
 
 from __future__ import annotations
@@ -40,8 +40,8 @@ def _client():
     # Lazy import; openai is already a backend dependency.
     from openai import OpenAI
     return OpenAI(
-        base_url=settings.github_models_base_url,
-        api_key=settings.github_models_token,
+        base_url=settings.llm_base_url,
+        api_key=settings.llm_api_key,
     )
 
 
@@ -60,7 +60,7 @@ def chat_structured(
     schema = response_model.model_json_schema()
     name = _tool_name(response_model)
     completion = _client().chat.completions.create(
-        model=model or settings.github_chat_model,
+        model=model or settings.llm_chat_model,
         messages=messages,
         temperature=temperature,
         tools=[{
@@ -102,7 +102,7 @@ def _chat_structured_json_fallback(
         ),
     }]
     completion = _client().chat.completions.create(
-        model=model or settings.github_chat_model,
+        model=model or settings.llm_chat_model,
         messages=augmented,
         temperature=temperature,
         response_format={"type": "json_object"},
@@ -119,7 +119,7 @@ def chat_text(
 ) -> str:
     """Plain-text chat completion."""
     completion = _client().chat.completions.create(
-        model=model or settings.github_chat_model,
+        model=model or settings.llm_chat_model,
         messages=messages,
         temperature=temperature,
     )

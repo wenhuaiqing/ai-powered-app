@@ -10,7 +10,7 @@ Two helpers cover every call site:
       Plain-text completion -- used by Summariser + Market Watch.
 
 The provider is chosen by settings.llm_provider:
-  "github"  -> GitHub Models (OpenAI-compatible, free rate-limited tier)
+  "openai"  -> any OpenAI-compatible endpoint (Azure OpenAI /openai/v1)
   "bedrock" -> AWS Bedrock converse (the original AWS deployment path)
 
 Embeddings live in services/embed.py with the same provider flag.
@@ -31,8 +31,8 @@ def _backend():
     if settings.llm_provider == "bedrock":
         from src.app.services import bedrock_chat
         return bedrock_chat
-    from src.app.services import github_chat
-    return github_chat
+    from src.app.services import openai_chat
+    return openai_chat
 
 
 def chat_structured(
