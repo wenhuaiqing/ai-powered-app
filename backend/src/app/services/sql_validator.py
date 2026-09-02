@@ -1,7 +1,7 @@
 """Validator for LLM-generated DuckDB SQL. SELECT-only, allowlisted tables, LIMIT injected.
 
-Mirrors an-earlier-internal-app/services/ai/sql_validator.py but targets DuckDB and a
-fixed table allowlist for the demo schema.
+SELECT-only validation with a fixed table allowlist, targeting DuckDB
+and the demo schema.
 """
 
 from __future__ import annotations

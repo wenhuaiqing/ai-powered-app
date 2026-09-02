@@ -5,9 +5,9 @@ Scores a single case's final answer + citations against the rubric:
   - citation_accuracy 1-5: do the citations support the claims? (Compliance/Market Watch only)
   - helpfulness       1-5: would an agent / buyer / tenant find this useful?
 
-Uses OpenAI structured outputs (response_format=JudgeVerdict). Reuses the
-same Azure OpenAI deployment configured for the app — judge runs at
-temperature 0 so verdicts are reproducible within a session.
+Uses OpenAI structured outputs (response_format=JudgeVerdict) against
+the same OpenAI-compatible endpoint the app runs on (LLM_* env vars).
+Judge runs at temperature 0 so verdicts are reproducible in a session.
 """
 
 from __future__ import annotations
@@ -64,8 +64,8 @@ class JudgeVerdict(BaseModel):
 
 
 def _client() -> OpenAI | None:
-    endpoint = os.getenv("AZURE_OPENAI_ENDPOINT", "")
-    api_key = os.getenv("AZURE_OPENAI_API_KEY", "")
+    endpoint = os.getenv("LLM_BASE_URL", "")
+    api_key = os.getenv("LLM_API_KEY", "")
     if not endpoint or not api_key:
         return None
     return OpenAI(base_url=endpoint, api_key=api_key)
@@ -77,7 +77,7 @@ def judge_case(case: dict[str, Any], result: dict[str, Any]) -> JudgeVerdict | N
     if client is None:
         return None
 
-    model = os.getenv("AZURE_OPENAI_CHAT_MODEL", "gpt-4o")
+    model = os.getenv("LLM_CHAT_MODEL", "gpt-4-1-mini")
     citations_text = "\n".join(
         f"- [{c.get('source_type', 'local_corpus')}] {c.get('source')}: {c.get('snippet', '')[:200]}"
         for c in (result.get("citations") or [])
