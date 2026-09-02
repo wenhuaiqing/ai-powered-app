@@ -121,9 +121,11 @@ async def run(state: GraphState, inputs: dict[str, Any]) -> ComplianceResult:
             response_model=ComplianceResult,
             temperature=0.1,
         )
-        # Ensure we don't lose the actual retrieved citations if the LLM omits them
-        if not parsed.citations:
-            parsed.citations = local_hits
+        # Citations are the retriever's record, not the model's: always
+        # return the actual retrieved hits. (Models paraphrase/shorten
+        # snippets when asked to echo them - gpt-4.1-mini especially -
+        # which destroys provenance and the facts the snippets carry.)
+        parsed.citations = local_hits
         parsed.used_web_fallback = parsed.used_web_fallback or used_fallback
         return parsed
     except Exception as exc:  # noqa: BLE001

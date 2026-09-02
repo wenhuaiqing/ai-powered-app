@@ -115,11 +115,12 @@ def run_case(case: dict[str, Any], backend: str) -> dict[str, Any]:
     those out; steady-state cold starts are held by the platform itself.
     """
     result = _run_case_once(case, backend)
-    if result.get("error"):
-        time.sleep(10)
-        retry = _run_case_once(case, backend)
-        retry["retried"] = True
-        return retry
+    for delay in (10, 20):
+        if not result.get("error"):
+            return result
+        time.sleep(delay)
+        result = _run_case_once(case, backend)
+        result["retried"] = True
     return result
 
 
