@@ -8,18 +8,21 @@ ship: LangGraph multi-agent orchestration, RAG, text-to-DuckDB, live web
 search, a RandomForest valuation model, structured-output contracts, and a
 three-tier eval suite with a CI gate.
 
-> Status: **Phase 1 + Phase 2 (all 6 steps) shipped.** Built and deployed
-> AWS-native - ECS Fargate fronted by an ALB, backed by RDS MySQL + DuckDB,
-> talking to **AWS Bedrock for chat (Claude Sonnet 4.6) AND embeddings
-> (Titan v2)** with the model + RAG parquets served from S3. Deploys land
-> via GitHub Actions OIDC (no static AWS keys in CI). **50 Tier-1 tests
-> green, 7/7 Tier-3 smoke evals passed against the live cloud URL** (see
-> [`evals/results/`](evals/results/)).
+> Status: **live on Azure.** Scale-to-zero Container Apps (nginx +
+> FastAPI as sidecars in one app), Azure Database for MySQL Flexible +
+> DuckDB, **Azure OpenAI for chat (gpt-4.1-mini) and embeddings
+> (text-embedding-3-small)** via the OpenAI-compatible surface, model +
+> RAG parquets on public-read Blob, secrets in Key Vault via managed
+> identity, deploys via GitHub Actions with workload identity federation
+> (no static cloud keys in CI). Terraform in [`infra-azure/`](infra-azure/);
+> the earlier AWS topology ([`infra/`](infra/)) is kept as reference.
+> **50 Tier-1 tests green, 7/7 Tier-3 smoke evals passing against the
+> live URL** (see [`evals/results/`](evals/results/)).
 >
-> **Demo status:** the AWS deployment is currently offline (free credits
-> ran their course) - **an Azure migration is in progress** and the demo
-> URL will return there. Everything is reproducible from this repo:
-> `infra/` (Terraform) + the build scripts stand the whole platform up.
+> **Live demo:** https://app.blackwave-53cf4f76.australiaeast.azurecontainerapps.io
+> (HTTPS with managed TLS; scale-to-zero means the first request after
+> idle takes ~30-60s to wake the platform - a deliberate ~$0/month
+> design, and the Orb retries through it).
 
 ---
 
@@ -122,13 +125,14 @@ three-tier eval suite with a CI gate.
 ```
 
 - **Backend**: FastAPI + LangGraph + Pydantic + DuckDB + MySQL (OLTP via
-  SQLAlchemy + PyMySQL) + scikit-learn + Tavily. **LLM + embeddings both
-  on AWS Bedrock** — Claude Sonnet 4.6 (`converse` API with forced tool
-  use for structured outputs) + Titan Embed v2 (1024-D). Static system
-  prompts are cached on the Bedrock side via `cachePoint` so repeat agent
-  calls hit the 5-min prompt cache.
+  SQLAlchemy + PyMySQL) + scikit-learn + Tavily. **LLM + embeddings on
+  Azure OpenAI** — gpt-4.1-mini via the OpenAI-compatible surface with
+  forced tool use for structured outputs, text-embedding-3-small
+  (1536-D). The provider sits behind a one-file dispatcher
+  (`services/llm.py` / `services/embed.py`); the original AWS Bedrock
+  path is retained behind a settings flag as reference.
 
-## AWS deployment topology
+## AWS deployment topology (legacy reference - the live deploy is Azure, see infra-azure/)
 
 ```
                               INTERNET
