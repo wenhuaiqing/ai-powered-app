@@ -38,6 +38,15 @@ log = logging.getLogger(__name__)
 
 PER_NODE_TIMEOUT_SECONDS = 30.0
 
+
+def public_error(exc: BaseException, node: str) -> str:
+    """Client-safe error text. Raw exception strings can carry provider
+    responses, file paths or generated SQL, so only the timeout case is
+    described specifically; everything else is logged server-side."""
+    if isinstance(exc, asyncio.TimeoutError):
+        return f"{node} timed out after {int(PER_NODE_TIMEOUT_SECONDS)}s"
+    return f"{node} failed ({type(exc).__name__})"
+
 NODE_RUNNERS: dict[AgentName, Callable[[GraphState, dict[str, Any]], Awaitable[Any]]] = {
     "compliance": compliance.run,
     "data_query": data_query.run,
@@ -77,8 +86,9 @@ async def _planner_node(state: GraphState) -> dict[str, Any]:
         decision = await asyncio.wait_for(plan(state), timeout=PER_NODE_TIMEOUT_SECONDS)
     except Exception as exc:  # noqa: BLE001
         log.exception("planner node failed")
-        await emit("node_error", {"name": "planner", "error": str(exc)})
-        return {"errors": state.errors + [NodeError(node="planner", message=str(exc))]}
+        msg = public_error(exc, "planner")
+        await emit("node_error", {"name": "planner", "error": msg})
+        return {"errors": state.errors + [NodeError(node="planner", message=msg)]}
 
     await emit("planner_decision", decision.model_dump())
     await emit("node_end", {"name": "planner", "result": decision.model_dump()})
@@ -105,8 +115,9 @@ async def _agents_runner_node(state: GraphState) -> dict[str, Any]:
             )
         except Exception as exc:  # noqa: BLE001
             log.exception("agent node %s failed", call.name)
-            await emit("node_error", {"name": call.name, "error": str(exc)})
-            errors.append(NodeError(node=call.name, message=str(exc)))
+            msg = public_error(exc, call.name)
+            await emit("node_error", {"name": call.name, "error": msg})
+            errors.append(NodeError(node=call.name, message=msg))
             continue
 
         field = RESULT_FIELDS[call.name]
@@ -123,12 +134,13 @@ async def _summariser_node(state: GraphState) -> dict[str, Any]:
         final = await asyncio.wait_for(summarise(state), timeout=PER_NODE_TIMEOUT_SECONDS)
     except Exception as exc:  # noqa: BLE001
         log.exception("summariser failed")
-        await emit("node_error", {"name": "summariser", "error": str(exc)})
+        msg = public_error(exc, "summariser")
+        await emit("node_error", {"name": "summariser", "error": msg})
         message = "Sorry, I ran into a problem composing the final answer."
         await emit("final_message", {"message": message, "used_agents": []})
         return {
             "final_message": message,
-            "errors": state.errors + [NodeError(node="summariser", message=str(exc))],
+            "errors": state.errors + [NodeError(node="summariser", message=msg)],
         }
 
     await emit("final_message", final.model_dump())

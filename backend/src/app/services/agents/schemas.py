@@ -9,7 +9,9 @@ from __future__ import annotations
 import json
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
+
+from src.settings import settings
 
 AgentName = Literal[
     "compliance",
@@ -28,8 +30,25 @@ AgentName = Literal[
 # ---------------------------------------------------------------------------
 
 class PageContext(BaseModel):
-    module: str = "dashboard"          # e.g. "properties", "pipeline", "compliance"
+    module: str = Field(default="dashboard", max_length=64)  # e.g. "properties", "pipeline"
     current_item: dict[str, Any] | None = None   # e.g. a property dict or lead dict
+
+    @field_validator("current_item")
+    @classmethod
+    def _bound_current_item(cls, value: dict[str, Any] | None) -> dict[str, Any] | None:
+        """current_item is pasted into LLM prompts verbatim, so cap its size.
+        A row from Properties/Pipeline is a few hundred bytes; the ceiling
+        only bites on deliberate abuse."""
+        if value is None:
+            return None
+        if len(value) > 64:
+            raise ValueError("current_item has too many keys (max 64)")
+        serialised = json.dumps(value, default=str)
+        if len(serialised) > settings.orb_max_context_chars:
+            raise ValueError(
+                f"current_item too large ({len(serialised)} chars, max {settings.orb_max_context_chars})"
+            )
+        return value
 
 
 # ---------------------------------------------------------------------------

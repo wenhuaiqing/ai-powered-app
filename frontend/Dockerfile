@@ -28,6 +28,8 @@ COPY --from=builder /app/dist /usr/share/nginx/html
 # Azure Container Apps overrides it with the backend's internal FQDN.
 ENV BACKEND_UPSTREAM=backend:8000
 COPY frontend/nginx.conf /etc/nginx/templates/default.conf.template
+# Static include (no envsubst needed) referenced from the template.
+COPY frontend/nginx-security-headers.conf /etc/nginx/security-headers.conf
 
 # nginx:alpine listens on 80 by default; expose for clarity.
 EXPOSE 80

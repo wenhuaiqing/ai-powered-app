@@ -72,6 +72,28 @@ resource "azurerm_key_vault_secret" "mysql_password" {
   depends_on   = [azurerm_role_assignment.kv_admin_self]
 }
 
+resource "azurerm_key_vault_secret" "mysql_app_password" {
+  name         = "mysql-app-password"
+  value        = random_password.mysql_app.result
+  key_vault_id = azurerm_key_vault.main.id
+  depends_on   = [azurerm_role_assignment.kv_admin_self]
+}
+
+# Shared secret for write endpoints + operator ("trusted") orb runs.
+# Unlock a browser session with ?write_token=<value> once; see
+# backend services/auth.py.
+resource "random_password" "demo_write_token" {
+  length  = 32
+  special = false
+}
+
+resource "azurerm_key_vault_secret" "demo_write_token" {
+  name         = "demo-write-token"
+  value        = random_password.demo_write_token.result
+  key_vault_id = azurerm_key_vault.main.id
+  depends_on   = [azurerm_role_assignment.kv_admin_self]
+}
+
 # ---- the app: nginx + backend as sidecars in ONE container app ------
 #
 # Originally two apps (frontend public, backend internal). The
@@ -111,8 +133,13 @@ resource "azurerm_container_app" "app" {
     identity            = azurerm_user_assigned_identity.backend.id
   }
   secret {
-    name                = "mysql-password"
-    key_vault_secret_id = azurerm_key_vault_secret.mysql_password.id
+    name                = "mysql-app-password"
+    key_vault_secret_id = azurerm_key_vault_secret.mysql_app_password.id
+    identity            = azurerm_user_assigned_identity.backend.id
+  }
+  secret {
+    name                = "demo-write-token"
+    key_vault_secret_id = azurerm_key_vault_secret.demo_write_token.id
     identity            = azurerm_user_assigned_identity.backend.id
   }
 
@@ -164,15 +191,23 @@ resource "azurerm_container_app" "app" {
       }
       env {
         name  = "MYSQL_USER"
-        value = azurerm_mysql_flexible_server.main.administrator_login
+        value = "app" # least-privilege login, created by scripts/create_app_user.py
       }
       env {
         name        = "MYSQL_PASSWORD"
-        secret_name = "mysql-password"
+        secret_name = "mysql-app-password"
       }
       env {
         name  = "MYSQL_DATABASE"
         value = azurerm_mysql_flexible_database.app.name
+      }
+      env {
+        name  = "MYSQL_SSL"
+        value = "true"
+      }
+      env {
+        name        = "DEMO_WRITE_TOKEN"
+        secret_name = "demo-write-token"
       }
     }
   }

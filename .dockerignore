@@ -49,8 +49,15 @@ evals/results/
 htmlcov/
 .coverage
 
-# Terraform state
+# Terraform state + secrets (both stacks). Only the artefact manifest is
+# needed by the backend image; everything else stays out of the context.
 infra/.terraform/
 infra/*.tfstate
 infra/*.tfstate.backup
 infra/.terraform.lock.hcl
+infra-azure/.terraform/
+infra-azure/*.tfstate
+infra-azure/*.tfstate.*
+infra-azure/tfplan
+infra-azure/*.tfplan
+infra-azure/terraform.tfvars

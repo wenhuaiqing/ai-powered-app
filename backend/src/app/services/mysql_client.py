@@ -32,7 +32,18 @@ def get_engine() -> Engine:
         pool_pre_ping=True,
         pool_recycle=1800,
         future=True,
+        connect_args=mysql_connect_args(),
     )
+
+
+def mysql_connect_args() -> dict[str, Any]:
+    """PyMySQL defaults to opportunistic TLS with no verification. With
+    MYSQL_SSL=true we make TLS mandatory and verify the server certificate
+    and hostname against the system CA bundle (Azure MySQL Flexible chains
+    to DigiCert, which is in the image's ca-certificates)."""
+    if settings.mysql_ssl:
+        return {"ssl_verify_cert": True, "ssl_verify_identity": True}
+    return {}
 
 
 @contextmanager

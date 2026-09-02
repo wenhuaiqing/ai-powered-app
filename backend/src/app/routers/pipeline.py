@@ -9,9 +9,10 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
+from src.app.services.auth import require_write_token
 from src.app.services.mysql_client import execute, fetch_all, rows_to_dicts
 
 router = APIRouter(prefix="/api/pipeline", tags=["pipeline"])
@@ -78,15 +79,20 @@ async def lead_events(lead_id: str) -> dict[str, Any]:
 
 class StatusUpdate(BaseModel):
     status: LeadStatus
-    note: str | None = None
-    actor: str = Field(default="user")
+    note: str | None = Field(default=None, max_length=500)
 
 
-@router.post("/leads/{lead_id}/status")
+# The audit actor is set server-side: the only principal that can reach
+# this endpoint is the holder of the demo write token.
+WRITE_ACTOR = "demo-operator"
+
+
+@router.post("/leads/{lead_id}/status", dependencies=[Depends(require_write_token)])
 async def update_lead_status(lead_id: str, body: StatusUpdate) -> dict[str, Any]:
     """Transition a lead's status and write an audit row to lead_events.
 
-    Two writes inside one transaction: UPDATE leads, INSERT lead_events.
+    Requires the demo write token (X-Write-Token). Two writes inside one
+    transaction: UPDATE leads, INSERT lead_events.
     """
     current = fetch_all("SELECT status FROM leads WHERE lead_id = :lid", {"lid": lead_id})
     if not current[1]:
@@ -112,7 +118,7 @@ async def update_lead_status(lead_id: str, body: StatusUpdate) -> dict[str, Any]
                 "from_status": from_status,
                 "to_status": body.status,
                 "note": body.note,
-                "actor": body.actor,
+                "actor": WRITE_ACTOR,
             },
         )
     return {"lead_id": lead_id, "status": body.status, "changed": True, "from": from_status}

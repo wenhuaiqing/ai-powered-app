@@ -7,6 +7,16 @@ resource "random_password" "mysql" {
   special = false # keep it URL/connection-string safe
 }
 
+# Least-privilege login the backend runs as (SELECT everywhere, UPDATE
+# leads, INSERT lead_events/agent_runs). Azure has no Terraform resource
+# for MySQL users, so the account is created by scripts/create_app_user.py
+# with this password (see the README runbook). The admin login stays with
+# migrations + seeding.
+resource "random_password" "mysql_app" {
+  length  = 24
+  special = false
+}
+
 resource "azurerm_mysql_flexible_server" "main" {
   name                   = "mysql-${var.prefix}"
   resource_group_name    = azurerm_resource_group.main.name
@@ -53,14 +63,12 @@ resource "azurerm_mysql_flexible_server_firewall_rule" "seed_client" {
   end_ip_address      = var.seed_client_ip
 }
 
-# PyMySQL connects without explicit TLS parameters, and Azure MySQL
-# defaults to require_secure_transport=ON, which would reject it.
-# The data is public Kaggle derivatives on a demo, so the pragmatic
-# call is to relax the requirement rather than thread TLS options
-# through the connection string.
-resource "azurerm_mysql_flexible_server_configuration" "no_tls_requirement" {
+# TLS is mandatory. The backend sets MYSQL_SSL=true, which makes PyMySQL
+# require TLS and verify the server certificate + hostname against the
+# image's CA bundle (Azure MySQL Flexible chains to DigiCert).
+resource "azurerm_mysql_flexible_server_configuration" "require_tls" {
   name                = "require_secure_transport"
   resource_group_name = azurerm_resource_group.main.name
   server_name         = azurerm_mysql_flexible_server.main.name
-  value               = "OFF"
+  value               = "ON"
 }

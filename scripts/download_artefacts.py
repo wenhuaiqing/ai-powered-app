@@ -16,10 +16,17 @@ Two sources, checked in order:
 
   S3_ARTEFACT_BUCKET   (legacy AWS path) bucket name; needs boto3 +
                        AWS credentials. Kept as reference.
+
+Integrity: every artefact is verified against infra-azure/artefacts.sha256,
+which ships inside the image (i.e. is pinned by the repo, not by the
+blob). model.pkl is unpickled at runtime, so a tampered blob must never be
+loaded - a mismatch deletes the file and aborts boot. Regenerate the
+manifest with scripts/hash_artefacts.py after uploading new artefacts.
 """
 
 from __future__ import annotations
 
+import hashlib
 import os
 import sys
 import time
@@ -27,6 +34,7 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 DATA = REPO_ROOT / "data"
+MANIFEST_PATH = Path(os.getenv("ARTEFACT_MANIFEST", REPO_ROOT / "infra-azure" / "artefacts.sha256"))
 
 # (object key under container/bucket, local destination path)
 ARTEFACTS: list[tuple[str, Path]] = [
@@ -39,20 +47,59 @@ ARTEFACTS: list[tuple[str, Path]] = [
 ]
 
 
-def _download_https(base_url: str) -> None:
+def load_manifest(path: Path = MANIFEST_PATH) -> dict[str, str]:
+    """Parse `<sha256>  <key>` lines. Missing manifest -> empty dict."""
+    if not path.exists():
+        return {}
+    out: dict[str, str] = {}
+    for line in path.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        digest, _, key = line.partition("  ")
+        if digest and key:
+            out[key.strip()] = digest.lower()
+    return out
+
+
+def sha256_of(path: Path) -> str:
+    h = hashlib.sha256()
+    with path.open("rb") as fh:
+        for chunk in iter(lambda: fh.read(1 << 20), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def verify(key: str, dest: Path, manifest: dict[str, str]) -> None:
+    """Raise if `dest` does not match the pinned digest for `key`.
+    Fail closed: an artefact with no manifest entry is also rejected."""
+    expected = manifest.get(key)
+    if not expected:
+        raise RuntimeError(f"no pinned checksum for {key} in {MANIFEST_PATH}")
+    actual = sha256_of(dest)
+    if actual != expected:
+        dest.unlink(missing_ok=True)
+        raise RuntimeError(
+            f"checksum mismatch for {key}: expected {expected[:12]}..., got {actual[:12]}... (file removed)"
+        )
+
+
+def _download_https(base_url: str, manifest: dict[str, str]) -> None:
     import httpx  # already a backend dependency
 
     with httpx.Client(timeout=60.0, follow_redirects=True) as client:
         for key, dest in ARTEFACTS:
-            if dest.exists():
+            if not dest.exists():
+                dest.parent.mkdir(parents=True, exist_ok=True)
+                url = f"{base_url.rstrip('/')}/{key}"
+                print(f"  downloading {url} -> {dest.relative_to(REPO_ROOT)}", flush=True)
+                resp = client.get(url)
+                resp.raise_for_status()
+                dest.write_bytes(resp.content)
+            else:
                 print(f"  already present: {dest.relative_to(REPO_ROOT)}")
-                continue
-            dest.parent.mkdir(parents=True, exist_ok=True)
-            url = f"{base_url.rstrip('/')}/{key}"
-            print(f"  downloading {url} -> {dest.relative_to(REPO_ROOT)}", flush=True)
-            resp = client.get(url)
-            resp.raise_for_status()
-            dest.write_bytes(resp.content)
+            verify(key, dest, manifest)
+            print(f"  verified {key}")
 
 
 def _download_s3(bucket: str) -> None:
@@ -80,7 +127,11 @@ def main() -> int:
     DATA.mkdir(parents=True, exist_ok=True)
     started = time.time()
     if base_url:
-        _download_https(base_url)
+        manifest = load_manifest()
+        if not manifest:
+            print(f"artefact manifest missing or empty: {MANIFEST_PATH}", file=sys.stderr)
+            return 1
+        _download_https(base_url, manifest)
     else:
         _download_s3(bucket)
     print(f"Artefacts ready ({time.time() - started:.1f}s)")
