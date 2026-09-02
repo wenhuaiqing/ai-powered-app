@@ -1,4 +1,4 @@
-// Lifted from an-earlier-internal-app/frontend/src/components/common/PlasmaOrb.jsx
+// Animated plasma orb rendered on canvas.
 // and re-skinned to the Reapit brand palette: indigo base (#4856EA, hue 237)
 // with teal (#0BAAB2, hue 183) ribbons and the brand red (#D1263D, hue 353)
 // as a sparking accent. Structure is identical to the original.

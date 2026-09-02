@@ -1,5 +1,5 @@
 // Auto-discovers pages under src/pages/<Section>/<Page>.jsx. Filename becomes
-// the URL slug and the sidebar label. Lifted from an-earlier-internal-app and trimmed
+// the URL slug and the sidebar label.
 // for the 6-route demo.
 
 import { Building2, Calculator, Home, LineChart, ScaleIcon, Users } from "lucide-react";

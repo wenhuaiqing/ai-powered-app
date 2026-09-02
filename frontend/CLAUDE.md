@@ -19,7 +19,7 @@ frontend/
     │   ├── common/
     │   │   ├── HeaderBar.jsx
     │   │   ├── SidebarNav.jsx
-    │   │   ├── PlasmaOrb.jsx          Lifted from an-earlier-internal-app, re-skinned
+    │   │   ├── PlasmaOrb.jsx          Animated orb (canvas)
     │   │   ├── UnifiedOrb.jsx         Streaming agent UI (SSE)
     │   │   └── PagePlaceholder.jsx
     │   └── agents/
@@ -40,7 +40,7 @@ frontend/
   of the logomark's `#98C1C2`) for AI badges and the second gradient stop.
   `t.dot.red` is the brand red `#D1263D` and `t.dot.yellow` is the brand
   orange `#FD9E1D`. The slate `#4A5A6B` is only inside the logo SVG itself.
-- **Inline styles** — matches an-earlier-internal-app's pattern. No CSS-in-JS dep.
+- **Inline styles** — no CSS-in-JS dependency.
 - **Icons** — `lucide-react`. Property-native: Building2, Users, Calculator,
   Scale, LineChart, Home.
 - **Pill CTAs** — `borderRadius: 999`. Cards: 10-14px.

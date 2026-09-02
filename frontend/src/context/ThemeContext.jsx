@@ -6,7 +6,8 @@ import { createContext, useContext, useState } from "react";
 //   #0BAAB2  teal    — AI accent (darkened sibling of logomark #98C1C2)
 //   #D1263D  red     — emphasis / alert
 //   #FD9E1D  orange  — warm channel (warnings, yellow series)
-// Token shape mirrors an-earlier-internal-app's ThemeContext so lifted components
+// Central theme tokens: components read t.* so the palette swaps in one
+// place, and shared components
 // (PlasmaOrb, UnifiedOrb) inherit the palette unchanged.
 
 export const light = {
