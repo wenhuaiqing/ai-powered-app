@@ -1,7 +1,7 @@
-// Animated plasma orb rendered on canvas.
-// and re-skinned to the Reapit brand palette: indigo base (#4856EA, hue 237)
+// Animated plasma orb: wraps the open-source `react-ai-orb` package,
+// re-skinned to the Reapit brand palette - indigo base (#4856EA, hue 237)
 // with teal (#0BAAB2, hue 183) ribbons and the brand red (#D1263D, hue 353)
-// as a sparking accent. Structure is identical to the original.
+// as a sparking accent - plus a small orbiting-rings CSS animation.
 import { Orb } from "react-ai-orb";
 
 const PALETTE = {
