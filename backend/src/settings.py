@@ -62,6 +62,9 @@ class Settings(BaseSettings):
     mysql_user: str = "app"
     mysql_password: str = "app"
     mysql_database: str = "reapit_demo"
+    # Require + verify TLS to MySQL (Azure). Off for the local docker-compose
+    # server, which only has a self-signed certificate.
+    mysql_ssl: bool = False
 
     @property
     def mysql_url(self) -> str:
@@ -70,6 +73,18 @@ class Settings(BaseSettings):
             f"@{self.mysql_host}:{self.mysql_port}/{self.mysql_database}"
             "?charset=utf8mb4"
         )
+
+    # Orb abuse controls (anonymous public endpoint that fans out to LLM +
+    # Tavily calls). Sliding window, in-process - see services/rate_limit.py.
+    orb_rate_limit_per_ip: int = 20
+    orb_rate_limit_global: int = 300
+    orb_rate_limit_window_seconds: float = 300.0
+    orb_max_message_chars: int = 2000
+    orb_max_context_chars: int = 8000
+
+    # Shared secret for write endpoints + "trusted" orb runs. Fail closed:
+    # empty means writes are refused. See services/auth.py.
+    demo_write_token: str = ""
 
     # CORS
     cors_origins: str = "http://localhost:5173"

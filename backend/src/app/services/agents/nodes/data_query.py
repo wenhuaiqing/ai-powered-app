@@ -155,9 +155,11 @@ async def run(state: GraphState, inputs: dict[str, Any]) -> DataQueryResult:
     try:
         columns, rows = fetch_rows(outcome.sql)
     except Exception as exc:  # noqa: BLE001
+        # Full DuckDB message goes to the log only - it can include file
+        # paths and the engine's view of the query.
         log.warning("data_query execution failed (%s)", exc)
         await emit("tool_result", {"node": "data_query", "tool": "duckdb_query",
-                                    "preview": f"execution failed: {exc}"})
+                                    "preview": "execution failed: the query could not be run"})
         return DataQueryResult(
             sql=outcome.sql,
             columns=[],
@@ -165,7 +167,7 @@ async def run(state: GraphState, inputs: dict[str, Any]) -> DataQueryResult:
             row_count=0,
             interpretation=draft.interpretation,
             validation_passed=True,
-            validation_errors=[str(exc)],
+            validation_errors=[f"query execution failed ({type(exc).__name__})"],
         )
 
     # Coerce non-JSON-friendly types (Decimal, datetime) for the SSE payload

@@ -34,6 +34,13 @@ def _engine_url() -> str:
     return f"mysql+pymysql://{user}:{password}@{host}:{port}/{db}?charset=utf8mb4&local_infile=1"
 
 
+def _connect_args() -> dict[str, object]:
+    """MYSQL_SSL=true -> mandatory, verified TLS (Azure). Empty for local compose."""
+    if os.getenv("MYSQL_SSL", "").lower() in ("1", "true", "yes"):
+        return {"ssl_verify_cert": True, "ssl_verify_identity": True}
+    return {}
+
+
 def _money_to_float(s: object) -> float | None:
     if pd.isna(s):
         return None
@@ -243,7 +250,7 @@ def _truncate(conn, tables: list[str]) -> None:
 
 
 def main() -> None:
-    engine = create_engine(_engine_url(), future=True)
+    engine = create_engine(_engine_url(), future=True, connect_args=_connect_args())
 
     print("Loading source CSVs", flush=True)
     properties = load_properties()

@@ -16,7 +16,13 @@ Internet -> frontend (ACA, public, managed TLS)
               |-- MySQL Flexible B1ms (free 12mo)  [OLTP]
               |-- DuckDB (rebuilt from MySQL on boot) [OLAP]
               |-- Blob (public-read artefacts: model.pkl + parquets)
-              +-- Key Vault via managed identity (Tavily, LLM key, MySQL pw)
+              +-- Key Vault via managed identity (Tavily, LLM key, MySQL pw,
+                    write token)
+
+Security posture: TLS verified to MySQL (least-privilege `app` login),
+artefacts pinned by SHA-256 in artefacts.sha256, orb endpoints rate
+limited + size capped, writes gated on the demo write token, CSP/HSTS
+from nginx.
 ```
 
 NOTE: the trial subscription allows exactly ONE Azure OpenAI account
@@ -80,6 +86,10 @@ az storage blob upload-batch `
   --pattern "model.pkl" --pattern "*.json" `
   --pattern "reviews_embeddings.parquet" `
   --pattern "regulations/embeddings.parquet"
+
+# Pin what you just uploaded. The backend refuses to boot on a mismatch.
+uv run python ..\scripts\hash_artefacts.py
+git add ..\infra-azurertefacts.sha256
 ```
 
 ### 6. Seed MySQL (one-off, from this machine)
@@ -94,9 +104,19 @@ $env:MYSQL_PASSWORD = terraform -chdir=..\infra-azure output -raw mysql_password
 $env:MYSQL_DATABASE = "reapit_demo"
 uv run --python 3.12 python ..\scripts\seed_all.py
 
+# Least-privilege login the app runs as (SELECT *, UPDATE leads, INSERT
+# lead_events/agent_runs). Re-run whenever mysql_app_password rotates.
+$env:MYSQL_SSL          = "true"
+$env:MYSQL_APP_PASSWORD = terraform -chdir=..\infra-azure output -raw mysql_app_password
+uv run --python 3.12 python ..\scripts\create_app_user.py
+
 # then close the firewall again:
 terraform apply
 ```
+
+Schema changes later on: `uv run python ..\scripts\migrate_mysql.py` with
+the same admin env (open the firewall first). The app user has no DDL
+rights by design.
 
 ### 7. Wire CI (repo secrets, one-time)
 
@@ -106,7 +126,22 @@ OIDC login. For the evals-smoke workflow: `LLM_BASE_URL`,
 `LLM_API_KEY`, `TAVILY_API_KEY`. After this, every push to main
 builds, pushes, and rolls both apps - no static cloud keys in CI.
 
-### 8. Smoke it
+### 8. Operator unlock (writes + trusted runs)
+
+The public site is read-only and rate limited. To demo lead status
+changes, bypass the limiter, and have your prompts shown verbatim on the
+Dashboard feed, open the site once per browser session with the token:
+
+```powershell
+$token = terraform -chdir=infra-azure output -raw demo_write_token
+Start-Process "$(terraform -chdir=infra-azure output -raw frontend_url)/?write_token=$token"
+```
+
+The frontend stores it in sessionStorage, scrubs it from the URL and
+sends `X-Write-Token` on every call. Anonymous visitors' prompts appear in
+the feed as generated labels ("Compliance check from Properties (L0055)").
+
+### 9. Smoke it
 
 ```powershell
 $url = terraform -chdir=infra-azure output -raw frontend_url
@@ -115,7 +150,7 @@ cd backend
 uv run --python 3.12 python ..\evals\run.py --tier smoke --backend $url
 ```
 
-### 9. Afterwards
+### 10. Afterwards
 
 - Update the main README's demo-status block with the live URL.
 - **Day 30**: upgrade the subscription to pay-as-you-go (Portal banner)
