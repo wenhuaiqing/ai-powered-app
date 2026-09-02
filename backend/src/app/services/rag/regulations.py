@@ -14,7 +14,7 @@ import numpy as np
 import pandas as pd
 
 from src.app.services.agents.schemas import Citation
-from src.app.services.embed import embed_query as embed_query_via_bedrock
+from src.app.services.embed import embed_query
 from src.settings import settings
 
 log = logging.getLogger(__name__)
@@ -36,7 +36,7 @@ def _corpus() -> tuple[pd.DataFrame, np.ndarray] | None:
 
 
 def _embed_query(query: str) -> np.ndarray | None:
-    vec = embed_query_via_bedrock(query)
+    vec = embed_query(query)
     if vec is None:
         return None
     norm = np.linalg.norm(vec)

@@ -1,4 +1,4 @@
-"""Provider-agnostic LLM helpers. AWS Bedrock-backed.
+"""Provider-agnostic LLM helpers.
 
 Two helpers cover every call site:
 
@@ -9,10 +9,11 @@ Two helpers cover every call site:
   chat_text(messages, ...) -> str
       Plain-text completion -- used by Summariser + Market Watch.
 
-Static system prompts (each agent's SYSTEM_PROMPT) get cached on the
-Bedrock side via `cachePoint` -- see services/bedrock_chat.py.
+The provider is chosen by settings.llm_provider:
+  "github"  -> GitHub Models (OpenAI-compatible, free rate-limited tier)
+  "bedrock" -> AWS Bedrock converse (the original AWS deployment path)
 
-Embeddings live in services/embed.py (Bedrock Titan v2).
+Embeddings live in services/embed.py with the same provider flag.
 """
 
 from __future__ import annotations
@@ -21,9 +22,17 @@ from typing import TypeVar
 
 from pydantic import BaseModel
 
-from src.app.services import bedrock_chat
+from src.settings import settings
 
 M = TypeVar("M", bound=BaseModel)
+
+
+def _backend():
+    if settings.llm_provider == "bedrock":
+        from src.app.services import bedrock_chat
+        return bedrock_chat
+    from src.app.services import github_chat
+    return github_chat
 
 
 def chat_structured(
@@ -34,7 +43,7 @@ def chat_structured(
     temperature: float = 0.0,
 ) -> M:
     """Structured-output chat. Returns a validated instance of response_model."""
-    return bedrock_chat.chat_structured(
+    return _backend().chat_structured(
         messages, response_model, model=model, temperature=temperature
     )
 
@@ -46,4 +55,4 @@ def chat_text(
     temperature: float = 0.0,
 ) -> str:
     """Plain-text chat. Returns the content of the first choice."""
-    return bedrock_chat.chat_text(messages, model=model, temperature=temperature)
+    return _backend().chat_text(messages, model=model, temperature=temperature)
