@@ -25,6 +25,18 @@ output "mysql_password" {
   sensitive = true
 }
 
+output "mysql_app_password" {
+  description = "Password for the least-privilege 'app' login (feed to scripts/create_app_user.py)."
+  value       = random_password.mysql_app.result
+  sensitive   = true
+}
+
+output "demo_write_token" {
+  description = "Unlock writes + trusted runs in a browser: <frontend_url>/?write_token=<this>."
+  value       = random_password.demo_write_token.result
+  sensitive   = true
+}
+
 # Values for GitHub repo secrets (deploy workflow's azure/login):
 output "gha_client_id" {
   description = "Set as repo secret AZURE_CLIENT_ID."

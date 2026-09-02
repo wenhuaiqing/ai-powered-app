@@ -35,6 +35,13 @@ def _engine_url() -> str:
     return f"mysql+pymysql://{user}:{password}@{host}:{port}/{db}?charset=utf8mb4"
 
 
+def _connect_args() -> dict[str, object]:
+    """MYSQL_SSL=true -> mandatory, verified TLS (Azure). Empty for local compose."""
+    if os.getenv("MYSQL_SSL", "").lower() in ("1", "true", "yes"):
+        return {"ssl_verify_cert": True, "ssl_verify_identity": True}
+    return {}
+
+
 def _extract(engine) -> dict[str, pd.DataFrame]:
     with engine.connect() as conn:
         suburbs = pd.read_sql(text("SELECT * FROM suburbs"), conn)
@@ -112,7 +119,7 @@ def _load(tables: dict[str, pd.DataFrame]) -> dict[str, int]:
 
 
 def main() -> None:
-    engine = create_engine(_engine_url(), future=True)
+    engine = create_engine(_engine_url(), future=True, connect_args=_connect_args())
 
     print("Extracting from MySQL", flush=True)
     extracts = _extract(engine)

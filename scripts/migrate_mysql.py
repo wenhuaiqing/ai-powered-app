@@ -30,6 +30,13 @@ def _engine_url() -> str:
     return f"mysql+pymysql://{user}:{password}@{host}:{port}/{db}?charset=utf8mb4"
 
 
+def _connect_args() -> dict[str, object]:
+    """MYSQL_SSL=true -> mandatory, verified TLS (Azure). Empty for local compose."""
+    if os.getenv("MYSQL_SSL", "").lower() in ("1", "true", "yes"):
+        return {"ssl_verify_cert": True, "ssl_verify_identity": True}
+    return {}
+
+
 def _strip_line_comments(sql: str) -> str:
     """Remove `-- ...` line comments before statement splitting so a
     stray semicolon inside a comment doesn't split the file mid-comment.
@@ -104,7 +111,7 @@ def _discover_migrations() -> list[tuple[str, Path]]:
 
 
 def main() -> None:
-    engine = create_engine(_engine_url(), future=True)
+    engine = create_engine(_engine_url(), future=True, connect_args=_connect_args())
 
     # Bootstrap the tracking table without going through the migrations
     # themselves (the first migration also CREATEs it — idempotent).

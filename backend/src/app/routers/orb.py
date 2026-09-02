@@ -13,11 +13,13 @@ import logging
 import time
 from typing import Any, AsyncIterator
 
-from fastapi import APIRouter
-from pydantic import BaseModel, Field
+from fastapi import APIRouter, Depends, Request
+from pydantic import BaseModel, Field, field_validator
 from sse_starlette.sse import EventSourceResponse
 
 from src.app.services.agents.graph import build_graph
+from src.app.services.auth import has_write_token
+from src.app.services.rate_limit import enforce_orb_rate_limit
 from src.app.services.agents.runs import from_event_log
 from src.app.services.agents.runtime import set_queue
 from src.app.services.agents.schemas import (
@@ -27,24 +29,37 @@ from src.app.services.agents.schemas import (
     PageContext,
     PlannerDecision,
 )
+from src.settings import settings
 
 log = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/orb", tags=["orb"])
 
+# Both orb routes are rate limited (per-IP + global) - see services/rate_limit.py.
+_limited = [Depends(enforce_orb_rate_limit)]
+
 END_TOTAL_TIMEOUT_SECONDS = 90.0
 
 
 class OrbChatRequest(BaseModel):
-    message: str
+    message: str = Field(min_length=1, max_length=settings.orb_max_message_chars)
     page_context: PageContext = Field(default_factory=PageContext)
 
 
 class OrbRunAgentRequest(BaseModel):
     agent: AgentName
     inputs: dict[str, Any] = Field(default_factory=dict)
-    message: str = ""  # optional user message for context in the summariser
+    # Optional user message for context in the summariser.
+    message: str = Field(default="", max_length=settings.orb_max_message_chars)
     page_context: PageContext = Field(default_factory=PageContext)
+
+    @field_validator("inputs")
+    @classmethod
+    def _bound_inputs(cls, value: dict[str, Any]) -> dict[str, Any]:
+        serialised = json.dumps(value, default=str)
+        if len(serialised) > settings.orb_max_context_chars:
+            raise ValueError(f"inputs too large (max {settings.orb_max_context_chars} chars)")
+        return value
 
 
 def _serialise(value: Any) -> str:
@@ -59,9 +74,12 @@ def _json_default(obj: Any) -> Any:
     return str(obj)
 
 
-async def _run_graph_sse(initial: GraphState) -> EventSourceResponse:
+async def _run_graph_sse(initial: GraphState, *, trusted: bool = False) -> EventSourceResponse:
     """Common SSE plumbing — runs the graph, drains a queue, streams events,
-    then persists the run to MySQL (agent_runs) for the activity feed."""
+    then persists the run to MySQL (agent_runs) for the activity feed.
+
+    `trusted` marks runs made with the demo write token; only those have
+    their prompt shown verbatim on the public Dashboard feed."""
     queue: asyncio.Queue[tuple[str, dict[str, Any]]] = asyncio.Queue()
     set_queue(queue)
     graph = build_graph()
@@ -72,9 +90,10 @@ async def _run_graph_sse(initial: GraphState) -> EventSourceResponse:
             await asyncio.wait_for(graph.ainvoke(initial), timeout=END_TOTAL_TIMEOUT_SECONDS)
         except asyncio.TimeoutError:
             await queue.put(("node_error", {"name": "graph", "error": "total request timeout"}))
-        except Exception as exc:  # noqa: BLE001
+        except Exception:  # noqa: BLE001
+            # Detail stays in the server log; clients get a generic message.
             log.exception("graph invocation failed")
-            await queue.put(("node_error", {"name": "graph", "error": str(exc)}))
+            await queue.put(("node_error", {"name": "graph", "error": "internal error while running the agents"}))
         finally:
             await queue.put(("done", {}))
 
@@ -101,6 +120,7 @@ async def _run_graph_sse(initial: GraphState) -> EventSourceResponse:
                     page_context=ctx_dump,
                     events=events,
                     duration_ms=duration_ms,
+                    trusted=trusted,
                 )
             except Exception as exc:  # noqa: BLE001
                 log.warning("agent_runs persistence skipped: %s", exc)
@@ -108,19 +128,19 @@ async def _run_graph_sse(initial: GraphState) -> EventSourceResponse:
     return EventSourceResponse(event_stream())
 
 
-@router.post("/chat")
-async def chat(req: OrbChatRequest) -> EventSourceResponse:
+@router.post("/chat", dependencies=_limited)
+async def chat(req: OrbChatRequest, request: Request) -> EventSourceResponse:
     """Run the orchestrator and stream typed events to the client.
 
     Event types: planner_decision, node_start, tool_call, tool_result,
     node_end, node_error, final_message, done.
     """
     initial = GraphState(user_message=req.message, page_context=req.page_context)
-    return await _run_graph_sse(initial)
+    return await _run_graph_sse(initial, trusted=has_write_token(request))
 
 
-@router.post("/run-agent")
-async def run_agent(req: OrbRunAgentRequest) -> EventSourceResponse:
+@router.post("/run-agent", dependencies=_limited)
+async def run_agent(req: OrbRunAgentRequest, request: Request) -> EventSourceResponse:
     """Invoke a specific agent directly. Skips the planner LLM call.
 
     Used by cross-module buttons that already know which agent they want —
@@ -142,7 +162,7 @@ async def run_agent(req: OrbRunAgentRequest) -> EventSourceResponse:
         page_context=req.page_context,
         planner_decision=pre_planned,
     )
-    return await _run_graph_sse(initial)
+    return await _run_graph_sse(initial, trusted=has_write_token(request))
 
 
 def _default_message(agent: AgentName, ctx: PageContext) -> str:

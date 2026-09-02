@@ -51,6 +51,14 @@ def test_join_allowlist_passes():
         ("PRAGMA database_list", "forbidden"),
         ("SELECT * FROM users", "allowlist"),
         ("SELECT 1; DROP TABLE properties", "multiple statements"),
+        # DuckDB replacement scans over files / URLs bypass the identifier
+        # regex - must be rejected explicitly.
+        ("SELECT * FROM '/etc/passwd.csv'", "file or URL"),
+        ("SELECT * FROM 'https://evil.example/x.parquet'", "file or URL"),
+        ("SELECT * FROM properties p JOIN 'leak.csv' l ON 1=1", "file or URL"),
+        ("SELECT * FROM read_csv('/etc/passwd')", "allowlist"),
+        ("INSTALL httpfs", "forbidden"),
+        ("LOAD httpfs", "forbidden"),
     ],
 )
 def test_dangerous_inputs_rejected(sql: str, expected_error_contains: str):

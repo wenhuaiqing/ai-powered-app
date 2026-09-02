@@ -37,8 +37,10 @@ COPY scripts ./scripts
 COPY misc ./misc
 
 # Only the regulation source docs ship from data/. The heavy artefacts
-# (model.pkl, parquets) come down from S3 on boot via download_artefacts.
+# (model.pkl, parquets) come down from blob storage on boot via
+# download_artefacts, which verifies them against this pinned manifest.
 COPY data/regulations/docs ./data/regulations/docs
+COPY infra-azure/artefacts.sha256 ./infra-azure/artefacts.sha256
 
 
 # ---------- runtime ----------

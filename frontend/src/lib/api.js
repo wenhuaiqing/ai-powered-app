@@ -1,12 +1,12 @@
 // Small fetch helper for /api/* endpoints. Throws on non-2xx with the body
 // text as the error message so callers can surface it in the UI.
 
-import { API_BASE_URL } from "../config.js";
+import { API_BASE_URL, authHeaders } from "../config.js";
 
 export async function api(path, { method = "GET", body, signal } = {}) {
   const opts = {
     method,
-    headers: { "Accept": "application/json" },
+    headers: { "Accept": "application/json", ...authHeaders() },
     signal,
   };
   if (body !== undefined) {

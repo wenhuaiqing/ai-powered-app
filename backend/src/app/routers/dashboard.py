@@ -11,6 +11,7 @@ from typing import Any
 
 from fastapi import APIRouter, Query
 
+from src.app.services.agents.runs import public_label
 from src.app.services.duckdb_client import fetch_rows
 from src.app.services.mysql_client import fetch_all, rows_to_dicts
 
@@ -38,12 +39,15 @@ async def kpis() -> dict[str, Any]:
 
 @router.get("/recent-runs")
 async def recent_runs(limit: int = Query(15, ge=1, le=50)) -> dict[str, Any]:
-    """Latest orb invocations. Powers the Dashboard activity feed."""
+    """Latest orb invocations. Powers the Dashboard activity feed.
+
+    Prompts are shown verbatim only for runs made with the demo write
+    token; anonymous runs get a generated label (see runs.public_label)."""
     cols, rows = fetch_all(
         """
         SELECT
             run_id, user_message, page_module, agents_called,
-            used_web_search, error_count, duration_ms,
+            used_web_search, error_count, trusted, duration_ms,
             related_lead_id, related_listing_id, created_at
         FROM agent_runs
         ORDER BY created_at DESC
@@ -60,6 +64,14 @@ async def recent_runs(limit: int = Query(15, ge=1, le=50)) -> dict[str, Any]:
             except json.JSONDecodeError:
                 item["agents_called"] = []
         item["used_web_search"] = bool(item.get("used_web_search"))
+        item["trusted"] = bool(item.pop("trusted", 0))
+        if not item["trusted"]:
+            item["user_message"] = public_label(
+                item["agents_called"] if isinstance(item["agents_called"], list) else [],
+                item.get("page_module"),
+                item.get("related_lead_id"),
+                item.get("related_listing_id"),
+            )
         # created_at is already normalised to an ISO+Z string by
         # mysql_client._coerce.
     return {"items": items, "count": len(items)}
