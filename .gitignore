@@ -72,3 +72,9 @@ infra/.terraform.tfstate.lock.info
 
 # Local secrets for terraform - never commit
 infra-azure/terraform.tfvars
+
+# Terraform state + plans hold secrets in cleartext - never commit
+*.tfstate
+*.tfstate.*
+*.tfplan
+infra-azure/tfplan

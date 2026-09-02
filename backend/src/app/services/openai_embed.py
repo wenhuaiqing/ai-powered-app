@@ -23,6 +23,18 @@ _BATCH = 64  # modest request bodies
 
 @lru_cache(maxsize=1)
 def _client():
+    # Azure's /openai/v1 compatibility surface serves chat fine but (as
+    # of 2026-09) returns DeploymentNotFound for embeddings. Use the GA
+    # deployments endpoint on Azure hosts; plain OpenAI-compatible
+    # endpoints keep the generic client.
+    if ".openai.azure.com" in settings.llm_base_url:
+        from openai import AzureOpenAI
+        endpoint = settings.llm_base_url.split("/openai/")[0]
+        return AzureOpenAI(
+            azure_endpoint=endpoint,
+            api_key=settings.llm_api_key,
+            api_version="2024-10-21",
+        )
     from openai import OpenAI
     return OpenAI(
         base_url=settings.llm_base_url,
