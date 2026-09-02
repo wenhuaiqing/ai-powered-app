@@ -55,6 +55,15 @@ Agents and their inputs:
   cleanly fit one of the specialists above.
     inputs_json: {"question": "<the user's question>"}
 
+Examples:
+- "What stamp duty applies to a $900k purchase, and find me
+  family-friendly suburbs in that price range" -> call BOTH
+  compliance (the stamp-duty question) AND matcher (the suburb
+  search with max_price 900000). Compound requests get one agent
+  per distinct ask - never fold a buyer-requirements search into
+  data_query.
+- "How many sales were there in Bondi last year?" -> data_query only.
+
 Rules:
 - Return strict JSON matching the PlannerDecision schema.
 - `inputs_json` MUST be a JSON-encoded STRING. Example value:
