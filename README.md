@@ -16,7 +16,7 @@ three-tier eval suite with a CI gate.
 > identity, deploys via GitHub Actions with workload identity federation
 > (no static cloud keys in CI). Terraform in [`infra-azure/`](infra-azure/);
 > the earlier AWS topology ([`infra/`](infra/)) is kept as reference.
-> **50 Tier-1 tests green, 7/7 Tier-3 smoke evals passing against the
+> **51 Tier-1 tests green, 7/7 Tier-3 smoke evals passing against the
 > live URL** (see [`evals/results/`](evals/results/)).
 >
 > **Live demo:** https://app.blackwave-53cf4f76.australiaeast.azurecontainerapps.io
@@ -32,8 +32,8 @@ three-tier eval suite with a CI gate.
   Compliance (NSW regulations RAG + Tavily web fallback), Data Query
   (text-to-DuckDB), Property Matcher (composes 3 tools), Valuation (RandomForest),
   Listing Drafter, Lead Triage, Market Watch (live Tavily), and General
-  (catch-all chat) — every agent emits a Pydantic-typed JSON object via OpenAI
-  structured outputs.
+  (catch-all chat) — every agent emits a Pydantic-typed JSON object, enforced
+  by a forced tool call whose parameter schema is the model's JSON schema.
 - **6 module pages** mirroring Reapit's product surface: Dashboard, Properties,
   Pipeline (CRM), Valuations, Compliance Hub, Market Insights. Each module
   has a side drawer with **cross-module agent buttons** (Estimate value, Draft
@@ -131,15 +131,356 @@ three-tier eval suite with a CI gate.
   (1536-D). The provider sits behind a one-file dispatcher
   (`services/llm.py` / `services/embed.py`); the original AWS Bedrock
   path is retained behind a settings flag as reference.
+- **Frontend**: React 18 + Vite 5 + React Router 7 + Recharts + Leaflet +
+  `react-ai-orb` (MIT package, re-skinned to the brand palette as
+  `PlasmaOrb.jsx`) + lucide-react.
+- **AI contracts**: every node emits a typed Pydantic model, and the graph
+  state is itself a Pydantic model. Structured calls declare a single tool
+  whose `parameters` schema is `response_model.model_json_schema()` and force
+  it with `tool_choice`, then validate the arguments — the same shape on both
+  providers. A JSON-mode retry covers a malformed tool call.
+- **Harness**: 30s per-node `asyncio.wait_for`, 90s end-to-end, 1 retry on
+  `pydantic.ValidationError`, typed `NodeError` captured into graph state on
+  the second failure so the Summariser handles partial results gracefully.
 
-## AWS deployment topology (legacy reference - the live deploy is Azure, see infra-azure/)
+## Live deployment topology (Azure)
+
+```
+                                 INTERNET
+                                    │  HTTPS — ACA-managed TLS
+                                    ▼
+  ┌─ Azure · australiaeast · resource group rg-aipapp ───────────────────┐
+  │                                                                      │
+  │ Container Apps environment (cae-*)                                   │
+  │  ┌─ container app "app"  ·  min 0 / max 1 replicas ───────────────┐  │
+  │  │                                                                │  │
+  │  │   frontend container            backend container              │  │
+  │  │   nginx · SPA + proxy   ───►    FastAPI · uvicorn :8000        │  │
+  │  │   0.25 vCPU / 0.5 GiB   127.0.0.1   0.5 vCPU / 1 GiB           │  │
+  │  │   public ingress :80    (sidecar)   /api  /orb  /health        │  │
+  │  └────────────────────────────────────────────────────────────────┘  │
+  │                                    │  backend egress                 │
+  │             ┌──────────────────────┼──────────────────────┐          │
+  │   ┌─────────┬────────┐   ┌─────────┬────────┐   ┌─────────┬────────┐ │
+  │   │ Azure OpenAI     │   │ MySQL Flexible   │   │ Blob storage     │ │
+  │   │ gpt-4.1-mini +   │   │ B1ms, free 12mo  │   │ public-read      │ │
+  │   │ text-embedding-  │   │ [OLTP: source    │   │ model.pkl + RAG  │ │
+  │   │ 3-small          │   │  of truth]       │   │ parquets         │ │
+  │   └──────────────────┘   └──────────────────┘   └──────────────────┘ │
+  │                                                                      │
+  │  ┌────────────────────────────────────────────────────────────────┐  │
+  │  │ Key Vault - tavily / llm / mysql secrets, read by the          │  │
+  │  │ backend's user-assigned managed identity                       │  │
+  │  └────────────────────────────────────────────────────────────────┘  │
+  │                                                                      │
+  │  (outbound also: tavily.com for Market Watch + Compliance)           │
+  └──────────────────────────────────────────────────────────────────────┘
+                                    ▲
+                                    │  GitHub Actions OIDC → workload
+                                    │  identity federation; GHCR images
+                          ┌─────────┴────────┐
+                          │ deploy-azure.yml │
+                          └──────────────────┘
+```
+
+**Why one app with two containers.** nginx and FastAPI are sidecars in a
+single Container App, so the SPA talks to the backend over `127.0.0.1`
+— same origin, no CORS, and only one ingress to keep warm. Two apps
+would have doubled the cold-start surface and needed internal ingress
+between them for no benefit at this size.
+
+**Deploy flow:** `git push main` → `.github/workflows/deploy-azure.yml`
+builds both images and pushes to GHCR tagged `:<sha>` and `:latest` →
+`azure/login` exchanges the Actions OIDC token against a user-assigned
+managed identity (workload identity federation — no static cloud
+credentials in GitHub) → two `az containerapp update --container-name`
+calls roll the app's `backend` and `frontend` containers onto the new
+images.
+
+**Data flow on backend boot:** the app scales 0→1 → image pull from
+GHCR → `scripts/download_artefacts.py` fetches `model.pkl` + the RAG
+parquets over plain HTTPS from the public-read blob container (no SDK,
+no credentials — the artefacts derive from public Kaggle data) →
+`scripts/etl_mysql_to_duckdb.py` rebuilds the analytical DuckDB from
+MySQL Flexible → execs uvicorn. First request after idle: ~30-60s.
+MySQL is the source of truth for OLTP data; Blob is the source of truth
+for the trained model + RAG corpora.
+
+**Cost posture:** scale-to-zero apps, 12-month-free B1ms MySQL, free
+blob tier, GHCR images, pay-per-token Azure OpenAI — ~$0-3/month at
+demo volume, deliberately. Trade-offs and the day-30 pay-as-you-go step
+are in [`infra-azure/README.md`](infra-azure/README.md).
+
+## Data architecture
+
+The app runs on **two databases** with a real pipeline between them — the
+"OLTP feeding OLAP" pattern that estate-agency platforms actually use in
+production. Mirroring this here gives every interaction a credible
+write-path and gives the analytics queries a denormalised table to scan.
+
+```
+   misc/*.csv                                       reads (transactional)
+       │                                          ┌──────────────────────┐
+       ▼                                          │ /api/properties      │
+   build_mysql.py     ┌────────────────────┐      │ /api/pipeline        │
+   (load + truncate)─►│   MySQL (OLTP)     │◄─────│ /orb/* (agent_runs)  │
+                      │                    │      └──────────────────────┘
+                      │ properties · leads │            writes
+                      │ listings · agents  │      (lead status, agent_runs)
+                      │ lead_events        │
+                      │ agent_runs         │
+                      └─────────┬──────────┘
+                                │ extract → denormalise → load
+                                ▼  (scripts/etl_mysql_to_duckdb.py)
+                      ┌────────────────────┐
+                      │  DuckDB (OLAP)     │      ┌──────────────────────┐
+                      │                    │◄─────│ /api/insights        │
+                      │ properties (flat)  │      │ /api/valuations      │
+                      │ listings_enriched  │      │ Data Query agent     │
+                      │ (view: 4-way JOIN) │      │ Matcher agent        │
+                      └────────────────────┘      └──────────────────────┘
+                              reads (analytics)
+```
+
+**OLTP — MySQL 8 / InnoDB**
+- Source of truth. Normalised + indexed for point lookups. FK joins, audit
+  logs, status state machines.
+- Tables: `agents`, `properties`, `suburbs`, `leads`, `lead_events`
+  (status-change audit log), `listings`, `agent_runs` (every orb
+  invocation persists here — powers the **Recent agent activity** feed on
+  the Dashboard).
+- Schema is managed by numbered SQL files under `scripts/migrations/`
+  and applied by `scripts/migrate_mysql.py` (tracks state in
+  `schema_migrations` — idempotent).
+
+**OLAP — DuckDB**
+- Columnar, embedded, denormalised. Holds the 11k-row sales reference for
+  the RandomForest + the `listings_enriched` view (properties + listings
+  + suburbs + agents pre-joined) for sub-millisecond Insights queries.
+- Rebuilt from MySQL by `scripts/etl_mysql_to_duckdb.py` — extract,
+  rename `property_type → type`, recreate `listings_enriched`, recompute
+  counts. Cheap enough to run on every backend boot, which is exactly
+  what the deployed container does.
+
+**Writes that close the loop**
+- `POST /api/pipeline/leads/{id}/status` — transitions a lead in `leads` +
+  appends a row to `lead_events` inside one transaction.
+- `POST /orb/chat` — every run records to `agent_runs` after the SSE
+  drain finishes, including duration, agents called, web-search usage,
+  and (when invoked from a drawer) the related `lead_id` / `listing_id`.
+
+**Local stack (docker-compose)** — `docker compose up -d mysql` brings up
+MySQL on `:3306`; backend reads `MYSQL_HOST` / `MYSQL_PASSWORD` from
+`.env`. **Cloud posture** — `infra-azure/` provisions MySQL Flexible
+B1ms with the admin password held in Key Vault and read by the backend's
+managed identity; the firewall stays shut, opened only for the one-off
+`scripts/seed_all.py` run from a known IP and closed again by the next
+`terraform apply`. See [infra-azure/README.md](infra-azure/README.md).
+The AWS equivalent — `db.t4g.micro` RDS in private subnets, credentials
+in Secrets Manager, seeding via a Fargate task inside the VPC with no
+bastion — is documented in [infra/README.md](infra/README.md).
+
+## Repo map
+
+```
+ai-powered-app/
+├── README.md                         (you are here)
+├── CLAUDE.md                         Root conventions (always loaded for Claude Code)
+├── backend/
+│   ├── CLAUDE.md                     Backend conventions
+│   └── src/
+│       ├── main.py                   FastAPI app, route registration
+│       └── app/
+│           ├── routers/              Thin handlers (/orb, /api/*)
+│           └── services/
+│               ├── agents/           LangGraph + 8 nodes + planner + summariser + schemas
+│               ├── rag/              regulations + reviews cosine retrievers
+│               ├── tools/web_search.py  Tavily wrapper
+│               ├── model.py          predict_with_contributions()
+│               └── sql_validator.py  DuckDB SELECT-only + allowlist
+│   └── tests/                        Tier-1 pytest (51 cases)
+├── frontend/
+│   ├── CLAUDE.md                     Frontend conventions
+│   └── src/
+│       ├── pages/<Section>/<Page>.jsx  Auto-discovered by navigation.js
+│       ├── components/common/
+│       │   ├── UnifiedOrb.jsx        Desktop floating + mobile fullpage / docked / sheet
+│       │   ├── PlasmaOrb.jsx         react-ai-orb shell, Reapit-tinted HSL
+│       │   ├── SidebarNav.jsx        Desktop sidebar
+│       │   ├── MobileNav.jsx         Top icon strip on mobile
+│       │   ├── Drawer.jsx            Side drawer (desktop) / bottom sheet (mobile)
+│       │   ├── SweepText.jsx         Red sweep + AgentActionHint chips
+│       │   └── SearchableSelect.jsx  Used by Valuations suburb picker
+│       ├── components/agents/        AgentTrace + ToolCallCard + AgentBadge
+│       ├── context/                  Theme + Viewport (override) + Orb providers
+│       └── lib/                      api.js, orbStream.js, useMediaQuery
+├── evals/
+│   ├── README.md                     Three-tier eval suite, how to add cases
+│   ├── cases/*.yml                   14 golden cases covering all 8 agents
+│   ├── run.py                        Tier 2 / Tier 3 runner
+│   └── judge.py                      LLM-as-judge with structured-output rubric
+├── scripts/                          Build pipeline (run once after clone)
+│   ├── migrations/*.sql              MySQL schema migrations (numbered)
+│   ├── migrate_mysql.py              Apply pending migrations
+│   ├── build_mysql.py                CSVs → MySQL (OLTP source of truth)
+│   ├── etl_mysql_to_duckdb.py        MySQL → DuckDB pipeline (analytics)
+│   ├── seed_all.py                   One-shot: migrate + build + ETL
+│   ├── build_db.py                   Legacy DuckDB-only build (CI fallback)
+│   ├── train_model.py                RandomForest training
+│   ├── stage_regulation_corpus.py    Writes 20 NSW regulation .md files
+│   ├── build_regulation_corpus.py    Chunks + embeds (text-embedding-3-small)
+│   ├── build_review_embeddings.py    Embeds 421 suburb cards (same model)
+│   ├── download_artefacts.py         Backend boot — pull model + parquets from Blob/S3
+│   └── upload_artefacts_to_s3.py     Legacy AWS — push rebuilt artefacts to S3
+├── infra-azure/                      Terraform — LIVE: Container Apps + Azure OpenAI + MySQL Flexible + Blob + Key Vault + WIF
+├── infra/                            Terraform — legacy AWS: VPC + RDS + ALB + ECS + ECR + S3 + Secrets + OIDC
+├── backend/Dockerfile                Multi-stage uv build → slim runtime
+├── frontend/Dockerfile               Vite build → nginx with SPA fallback + /api proxy
+├── frontend/nginx.conf               Server-level root, SSE-friendly proxy_buffering off
+├── docker-compose.yml                Full stack: MySQL + backend + frontend
+├── misc/                             Kaggle CSVs + notebooks (read-only)
+├── data/                             Built artefacts (gitignored except docs/)
+└── .github/workflows/                evals-smoke.yml (Tier 3 PR gate)
+                                      + deploy-azure.yml (live, push to main)
+                                      + deploy.yml (legacy AWS, manual dispatch)
+```
+
+## Run locally
+
+You need an **OpenAI-compatible chat + embeddings endpoint** — the live
+demo points at Azure OpenAI's `/openai/v1` surface, but anything speaking
+the OpenAI protocol works — plus a Tavily key for Market Watch and the
+Compliance web fallback. Copy `.env.example` to `.env` and fill in:
+
+```env
+# On Azure OpenAI, LLM_CHAT_MODEL / LLM_EMBED_MODEL are *deployment*
+# names (the chat deployment is `gpt-4-1-mini`, backing model
+# gpt-4.1-mini 2025-04-14). On stock OpenAI they are model ids.
+LLM_BASE_URL=https://<your-account>.openai.azure.com/openai/v1/
+LLM_API_KEY=<key>
+LLM_CHAT_MODEL=gpt-4-1-mini
+LLM_EMBED_MODEL=text-embedding-3-small
+
+TAVILY_API_KEY=<get a free one at tavily.com>
+```
+
+`infra-azure/` provisions the Azure OpenAI account and prints both values
+(`terraform output -raw llm_base_url` / `llm_api_key`) — see
+[infra-azure/README.md](infra-azure/README.md).
+
+The original AWS Bedrock path is still in the tree behind
+`LLM_PROVIDER=bedrock` / `EMBED_PROVIDER=bedrock` (Claude Sonnet 4.6 +
+Titan Embed v2; needs AWS credentials and Bedrock model access). The
+embedding dimensions differ — 1536-D for text-embedding-3-small against
+1024-D for Titan v2 — so switching providers means rebuilding the RAG
+parquets with `build_regulation_corpus.py` + `build_review_embeddings.py`.
+
+Then:
+
+```powershell
+# 0) MySQL (OLTP). Boots in ~5s; defaults in docker-compose match .env.example.
+docker compose up -d mysql
+
+# 1) One-time: seed MySQL, then ETL into DuckDB, train model + embeddings.
+cd backend
+uv sync
+uv run python ../scripts/seed_all.py            # migrate + build_mysql + ETL → DuckDB
+uv run python ../scripts/train_model.py
+uv run python ../scripts/stage_regulation_corpus.py
+uv run python ../scripts/build_regulation_corpus.py
+uv run python ../scripts/build_review_embeddings.py
+
+# Backend (terminal 1)
+uv run uvicorn src.main:app --reload --port 8000
+
+# Frontend (terminal 2)
+cd frontend
+npm install
+npm run dev   # http://localhost:5173
+
+# Tier-1 pytest
+cd backend
+uv run pytest                         # 51 tests, ~10s
+
+# Tier-3 eval smoke (against the running backend)
+uv run python ../evals/run.py --tier smoke
+
+# Tier-2 LLM-judge full run (~$0.50 in LLM tokens, ~3 min)
+uv run python ../evals/run.py --tier full
+```
+
+### Or: full stack via docker compose
+
+```powershell
+# After the one-time uv-run data build above (model.pkl + parquet + DuckDB):
+docker compose up -d --build
+# -> MySQL on :3306, FastAPI on :8000, nginx-served SPA on :8080
+
+# All three containers wait on healthchecks before the next starts; first
+# build takes ~2 min. data/ mounts as a bind volume so re-running the
+# scripts on the host updates what the container reads. Stop the stack:
+docker compose down              # keeps the MySQL volume
+docker compose down --volumes    # nukes the seed data too
+```
+
+The nginx container proxies `/api/*`, `/orb/*`, and `/health` to the
+backend service over the compose network, so the SPA is single-origin
+(no CORS round-trip) and SSE streams unbuffered (no `nginx` cache, no
+`X-Accel-Buffering`).
+
+## Deploy it yourself
+
+### Azure (the live path)
+
+Full runbook — prerequisites, ordering, the seed step, and the day-30
+pay-as-you-go reminder — lives in
+[`infra-azure/README.md`](infra-azure/README.md). The short version:
+
+```powershell
+# One-time. Needs az login + Terraform >= 1.7 + a Tavily key in
+# infra-azure/terraform.tfvars (gitignored).
+cd infra-azure
+terraform init
+terraform apply          # ~15 min; MySQL Flexible is the slow part
+```
+
+Terraform creates the resource group, Container Apps environment + the
+single `app`, the Azure OpenAI account and its two deployments, MySQL
+Flexible, the blob container, Key Vault + the backend's managed
+identity, and the GitHub OIDC federated credential. Afterwards: point
+`.env` at the new Azure OpenAI, rebuild the RAG parquets (the embedding
+model determines the vector width), upload artefacts to blob, seed
+MySQL once through a temporary firewall rule, then set the three repo
+secrets (`AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, `AZURE_SUBSCRIPTION_ID`)
+so `deploy-azure.yml` can log in without stored credentials.
+
+```powershell
+# Get the URL and smoke it end-to-end
+$url = terraform -chdir=infra-azure output -raw frontend_url
+curl "$url/health"                                   # cold start on first hit
+cd backend
+uv run python ..\evals\run.py --tier smoke --backend $url
+```
+
+Teardown: `terraform -chdir=infra-azure destroy`.
+
+### Legacy: the AWS topology
+
+The first deployment ran on ECS Fargate behind an ALB with Bedrock for
+inference. It is offline (credits exhausted) but kept intact as
+reference — Terraform in [`infra/`](infra/), and `deploy.yml` still
+exists as a manual-dispatch workflow. Runbook in
+[infra/README.md](infra/README.md).
+
+<details>
+<summary>AWS topology diagram, deploy flow, and Phase 2 status</summary>
 
 ```
                               INTERNET
                                  │
                                  ▼
    ┌────────────────────────────────────────────────────────────────┐
-   │  AWS account 766265104419 / region ap-southeast-2 (Sydney)     │
+   │  AWS account <redacted> / region ap-southeast-2 (Sydney)       │
    │                                                                 │
    │  ┌─────────────────────────────────────────────────────────┐   │
    │  │           VPC  10.40.0.0/16  (2 AZs)                    │   │
@@ -222,7 +563,7 @@ its own local copy of the model files; MySQL is the single source of
 truth for OLTP data (properties, leads, agent_runs, lead_events); S3
 is the single source of truth for the trained model + RAG corpora.
 
-## Phase 2 status
+**Phase 2 (AWS) shipped in six steps:**
 
 | Step | What | Status |
 |---|---|---|
@@ -232,267 +573,23 @@ is the single source of truth for the trained model + RAG corpora.
 | 3 | Compute Terraform (ECR + ALB + ECS services + OIDC) | ✓ shipped |
 | 4 | GitHub Actions deploy workflow | ✓ shipped |
 | 5 | Data artefacts + runtime secrets baked in | ✓ shipped |
-| 6 | S3 artefact bucket + Bedrock Titan embeddings + Azure dropped | ✓ shipped |
-- **Frontend**: React 18 + Vite 5 + React Router 7 + Recharts + Leaflet +
-  `react-ai-orb` (custom PlasmaOrb visual) + lucide-react.
-- **AI contracts**: every node emits a typed Pydantic model. The graph state
-  is itself a Pydantic model. LLM calls use `client.beta.chat.completions.parse`
-  with `response_format=<Pydantic class>` so the model enforces the schema.
-- **Harness**: 30s per-node `asyncio.wait_for`, 90s end-to-end, 1 retry on
-  `pydantic.ValidationError`, typed `NodeError` captured into graph state on
-  the second failure so the Summariser handles partial results gracefully.
+| 6 | S3 artefact bucket + Bedrock Titan embeddings (no external AI dependency) | ✓ shipped |
 
-## Data architecture
+**Provision + deploy (as it was):** `terraform apply -var "github_repository=<owner>/<repo>"`
+in `infra/` (~10 min, ~$77/mo while running), copy nine Terraform
+outputs into the repo's Actions **Variables**, seed RDS with
+`aws ecs run-task` against the seed task family, then
+`echo "http://$(terraform output -raw alb_dns_name)"`.
+`terraform destroy` takes it back to zero cost.
 
-The app runs on **two databases** with a real pipeline between them — the
-"OLTP feeding OLAP" pattern that estate-agency platforms actually use in
-production. Mirroring this here gives every interaction a credible
-write-path and gives the analytics queries a denormalised table to scan.
-
-```
-   misc/*.csv                                       reads (transactional)
-       │                                          ┌──────────────────────┐
-       ▼                                          │ /api/properties      │
-   build_mysql.py     ┌────────────────────┐      │ /api/pipeline        │
-   (load + truncate)─►│   MySQL (OLTP)     │◄─────│ /orb/* (agent_runs)  │
-                      │                    │      └──────────────────────┘
-                      │ properties · leads │            writes
-                      │ listings · agents  │      (lead status, agent_runs)
-                      │ lead_events        │
-                      │ agent_runs         │
-                      └─────────┬──────────┘
-                                │ extract → denormalise → load
-                                ▼  (scripts/etl_mysql_to_duckdb.py)
-                      ┌────────────────────┐
-                      │  DuckDB (OLAP)     │      ┌──────────────────────┐
-                      │                    │◄─────│ /api/insights        │
-                      │ properties (flat)  │      │ /api/valuations      │
-                      │ listings_enriched  │      │ Data Query agent     │
-                      │ (view: 4-way JOIN) │      │ Matcher agent        │
-                      └────────────────────┘      └──────────────────────┘
-                              reads (analytics)
-```
-
-**OLTP — MySQL 8 / InnoDB**
-- Source of truth. Normalised + indexed for point lookups. FK joins, audit
-  logs, status state machines.
-- Tables: `agents`, `properties`, `suburbs`, `leads`, `lead_events`
-  (status-change audit log), `listings`, `agent_runs` (every orb
-  invocation persists here — powers the **Recent agent activity** feed on
-  the Dashboard).
-- Schema is managed by numbered SQL files under `scripts/migrations/`
-  and applied by `scripts/migrate_mysql.py` (tracks state in
-  `schema_migrations` — idempotent).
-
-**OLAP — DuckDB**
-- Columnar, embedded, denormalised. Holds the 11k-row sales reference for
-  the RandomForest + the `listings_enriched` view (properties + listings
-  + suburbs + agents pre-joined) for sub-millisecond Insights queries.
-- Rebuilt from MySQL by `scripts/etl_mysql_to_duckdb.py` — extract,
-  rename `property_type → type`, recreate `listings_enriched`, recompute
-  counts. Safe to schedule (cron locally, EventBridge in AWS).
-
-**Writes that close the loop**
-- `POST /api/pipeline/leads/{id}/status` — transitions a lead in `leads` +
-  appends a row to `lead_events` inside one transaction.
-- `POST /orb/chat` — every run records to `agent_runs` after the SSE
-  drain finishes, including duration, agents called, web-search usage,
-  and (when invoked from a drawer) the related `lead_id` / `listing_id`.
-
-**Local stack (docker-compose)** — `docker compose up -d mysql` brings up
-MySQL on `:3306`; backend reads `MYSQL_HOST` / `MYSQL_PASSWORD` from
-`.env`. **AWS posture** — `infra/` provisions `db.t4g.micro` RDS MySQL in
-private subnets with credentials in Secrets Manager; the seed task
-definition runs the same `scripts/seed_all.py` inside the VPC, no
-bastion / no public access. See [infra/README.md](infra/README.md).
-
-## Repo map
-
-```
-ai-powered-app/
-├── README.md                         (you are here)
-├── CLAUDE.md                         Root conventions (always loaded for Claude Code)
-├── backend/
-│   ├── CLAUDE.md                     Backend conventions
-│   └── src/
-│       ├── main.py                   FastAPI app, route registration
-│       └── app/
-│           ├── routers/              Thin handlers (/orb, /api/*)
-│           └── services/
-│               ├── agents/           LangGraph + 8 nodes + planner + summariser + schemas
-│               ├── rag/              regulations + reviews cosine retrievers
-│               ├── tools/web_search.py  Tavily wrapper
-│               ├── model.py          predict_with_contributions()
-│               └── sql_validator.py  DuckDB SELECT-only + allowlist
-│   └── tests/                        Tier-1 pytest (42 cases)
-├── frontend/
-│   ├── CLAUDE.md                     Frontend conventions
-│   └── src/
-│       ├── pages/<Section>/<Page>.jsx  Auto-discovered by navigation.js
-│       ├── components/common/
-│       │   ├── UnifiedOrb.jsx        Desktop floating + mobile fullpage / docked / sheet
-│       │   ├── PlasmaOrb.jsx         react-ai-orb shell, Reapit-tinted HSL
-│       │   ├── SidebarNav.jsx        Desktop sidebar
-│       │   ├── MobileNav.jsx         Top icon strip on mobile
-│       │   ├── Drawer.jsx            Side drawer (desktop) / bottom sheet (mobile)
-│       │   ├── SweepText.jsx         Red sweep + AgentActionHint chips
-│       │   └── SearchableSelect.jsx  Used by Valuations suburb picker
-│       ├── components/agents/        AgentTrace + ToolCallCard + AgentBadge
-│       ├── context/                  Theme + Viewport (override) + Orb providers
-│       └── lib/                      api.js, orbStream.js, useMediaQuery
-├── evals/
-│   ├── README.md                     Three-tier eval suite, how to add cases
-│   ├── cases/*.yml                   14 golden cases covering all 8 agents
-│   ├── run.py                        Tier 2 / Tier 3 runner
-│   └── judge.py                      LLM-as-judge with structured-output rubric
-├── scripts/                          Build pipeline (run once after clone)
-│   ├── migrations/*.sql              MySQL schema migrations (numbered)
-│   ├── migrate_mysql.py              Apply pending migrations
-│   ├── build_mysql.py                CSVs → MySQL (OLTP source of truth)
-│   ├── etl_mysql_to_duckdb.py        MySQL → DuckDB pipeline (analytics)
-│   ├── seed_all.py                   One-shot: migrate + build + ETL
-│   ├── build_db.py                   Legacy DuckDB-only build (CI fallback)
-│   ├── train_model.py                RandomForest training
-│   ├── stage_regulation_corpus.py    Writes 20 NSW regulation .md files
-│   ├── build_regulation_corpus.py    Chunks + embeds via Bedrock Titan v2
-│   ├── build_review_embeddings.py    Embeds 421 suburb cards (Titan v2)
-│   ├── download_artefacts.py         Backend boot — pull model + parquets from S3
-│   └── upload_artefacts_to_s3.py     Local dev — push rebuilt artefacts to S3
-├── infra/                            Terraform — VPC + RDS + ALB + ECS + ECR + S3 + Secrets + OIDC (Phase 2)
-├── backend/Dockerfile                Multi-stage uv build → slim runtime (Phase 2 step 2)
-├── frontend/Dockerfile               Vite build → nginx with SPA fallback + /api proxy
-├── frontend/nginx.conf               Server-level root, SSE-friendly proxy_buffering off
-├── docker-compose.yml                Full stack: MySQL + backend + frontend
-├── misc/                             Kaggle CSVs + notebooks (read-only)
-├── data/                             Built artefacts (gitignored except docs/)
-└── .github/workflows/                evals-smoke.yml (Tier 3 PR gate) + deploy.yml (Phase 2 step 4)
-```
-
-## Run locally
-
-You need AWS credentials with Bedrock access (`aws configure` is fine)
-and a Tavily key for Market Watch + Compliance web fallback. Copy
-`.env.example` to `.env` and fill in:
-
-```env
-AWS_REGION=ap-southeast-2
-BEDROCK_CHAT_MODEL=au.anthropic.claude-sonnet-4-6
-BEDROCK_EMBED_MODEL=amazon.titan-embed-text-v2:0
-TAVILY_API_KEY=<get a free one at tavily.com>
-```
-
-Enable Bedrock model access for Claude Sonnet 4.6 + Titan Embed v2 in
-the AWS console before running anything — see [infra/README.md](infra/README.md).
-
-Then:
-
-```powershell
-# 0) MySQL (OLTP). Boots in ~5s; defaults in docker-compose match .env.example.
-docker compose up -d mysql
-
-# 1) One-time: seed MySQL, then ETL into DuckDB, train model + embeddings.
-cd backend
-uv sync
-uv run python ../scripts/seed_all.py            # migrate + build_mysql + ETL → DuckDB
-uv run python ../scripts/train_model.py
-uv run python ../scripts/stage_regulation_corpus.py
-uv run python ../scripts/build_regulation_corpus.py
-uv run python ../scripts/build_review_embeddings.py
-
-# Backend (terminal 1)
-uv run uvicorn src.main:app --reload --port 8000
-
-# Frontend (terminal 2)
-cd frontend
-npm install
-npm run dev   # http://localhost:5173
-
-# Tier-1 pytest
-cd backend
-uv run pytest                         # 50 tests, ~10s
-
-# Tier-3 eval smoke (against the running backend)
-uv run python ../evals/run.py --tier smoke
-
-# Tier-2 LLM-judge full run (~$0.50 in OpenAI tokens, ~3 min)
-uv run python ../evals/run.py --tier full
-```
-
-### Or: full stack via docker compose
-
-```powershell
-# After the one-time uv-run data build above (model.pkl + parquet + DuckDB):
-docker compose up -d --build
-# -> MySQL on :3306, FastAPI on :8000, nginx-served SPA on :8080
-
-# All three containers wait on healthchecks before the next starts; first
-# build takes ~2 min. data/ mounts as a bind volume so re-running the
-# scripts on the host updates what the container reads. Stop the stack:
-docker compose down              # keeps the MySQL volume
-docker compose down --volumes    # nukes the seed data too
-```
-
-The nginx container proxies `/api/*`, `/orb/*`, and `/health` to the
-backend service over the compose network, so the SPA is single-origin
-(no CORS round-trip) and SSE streams unbuffered (no `nginx` cache, no
-`X-Accel-Buffering`).
-
-## Deploy to AWS (Phase 2)
-
-End-to-end deploy in two phases — infrastructure (manual, one-time) and
-code (automated on every push to `main`).
-
-### Phase 2 step 3 — provision infrastructure (`terraform apply`)
-
-```bash
-# Pre-reqs: AWS account + `aws configure` locally + Bedrock model access
-# enabled in the AWS console for the target region.
-
-cd infra
-terraform init
-terraform apply -var "github_repository=<owner>/<repo>"
-# ~10 min (RDS provisioning is the slow part). Creates VPC, RDS,
-# Secrets Manager, ECR repos, ECS cluster + services, ALB, IAM roles,
-# GitHub OIDC trust. ~$77/mo while running.
-```
-
-### Phase 2 step 4 — wire GitHub Actions (one-time)
-
-Copy nine Terraform outputs into the repo's **Settings → Secrets and
-variables → Actions → Variables** tab. Exact commands in
-[infra/README.md](infra/README.md). After this, every push to `main`
-runs `.github/workflows/deploy.yml` — build images → push to ECR → roll
-ECS services. ~4 min per deploy. No static AWS keys ever stored in
-GitHub (OIDC federation).
-
-### Seed RDS the first time
-
-```bash
-aws ecs run-task \
-  --cluster $(terraform output -raw ecs_cluster_name) \
-  --task-definition $(terraform output -raw seed_task_family) \
-  --launch-type FARGATE \
-  --network-configuration "awsvpcConfiguration={subnets=[...], securityGroups=[...]}"
-```
-
-Reusable: re-run whenever the source CSVs change.
-
-### Get the URL
-
-```bash
-echo "http://$(terraform output -raw alb_dns_name)"
-```
-
-### Teardown
-
-```bash
-cd infra && terraform destroy   # ~5 min; zero ongoing cost
-```
+</details>
 
 ## 5-minute demo script
 
-Open `localhost:5173` (or click **Mobile view** in the header to preview the
-mobile shell). Click each prompt in turn — every wow moment is one click away
+Open the [live demo](https://app.blackwave-53cf4f76.australiaeast.azurecontainerapps.io)
+— give the first request ~30-60s to wake the platform — or `localhost:5173`
+if you are running it yourself. Click **Mobile view** in the header to preview
+the mobile shell. Click each prompt in turn; every wow moment is one click away
 from the Dashboard.
 
 | # | Action | What to watch for |
@@ -510,9 +607,11 @@ from the Dashboard.
 The pieces that show this is more than a happy-path demo:
 
 - **Structured outputs everywhere** — `services/agents/schemas.py` is the
-  single source of truth for graph state + every node's return shape.
-  `client.beta.chat.completions.parse(..., response_format=ComplianceResult)`
-  means the model enforces the schema, not a parser.
+  single source of truth for graph state + every node's return shape. Each
+  structured call ships the Pydantic model's JSON schema as a single tool's
+  `parameters` and pins `tool_choice` to it, so the arguments come back
+  shaped — the model enforces the schema, not a parser — with a JSON-mode
+  retry if a tool call ever comes back malformed.
 - **Conditional web fallback in Compliance** — when local cosine max score
   drops below 0.55, the node calls Tavily scoped to NSW gov domains and
   merges the hits with a `source_type: "web"` discriminator so the UI can
@@ -521,7 +620,7 @@ The pieces that show this is more than a happy-path demo:
   `WITH ... AS (...)` name extraction. Catches injection in `tests/agents/
   test_sql_validator.py`.
 - **Three-tier evals**:
-  - Tier 1 — `pytest backend/tests/` (50 cases, ~10s, runs every commit).
+  - Tier 1 — `pytest backend/tests/` (51 cases, ~10s, runs every commit).
   - Tier 2 — `evals/run.py --tier full` (14 golden cases + LLM-judge rubric).
   - Tier 3 — `.github/workflows/evals-smoke.yml` PR gate (7 cases, string
     assertions, no judge cost).
@@ -536,20 +635,33 @@ The pieces that show this is more than a happy-path demo:
   Reapit AI SVG (`#4856EA` indigo, `#0BAAB2` teal, `#D1263D` red, `#FD9E1D`
   orange). Real Reapit favicon + RAI logo. Mobile View toggle pill has the
   same red sweep + heartbeat as the dashboard hint.
-- **Bedrock-native LLM layer** — every agent calls `chat_structured(...)`
-  / `chat_text(...)` from `services/llm.py`, which delegates to Bedrock
-  `converse` with forced tool-use for structured outputs and appends a
-  `cachePoint` after the system blocks so the 50-150 line agent system
-  prompts get cached (5-min TTL) on the Bedrock side. Embeddings use
-  the matching Bedrock Titan v2 wrapper in `services/embed.py` — same
-  account, same region, no Azure runtime dependency.
-- **Real AWS deploy** with infra-as-code and hands-free CI/CD. ~600 lines of
-  Terraform under `infra/` provision VPC + 2 AZs + RDS MySQL in private
-  subnets + ALB + ECR + ECS Fargate services + Secrets Manager + GitHub
-  OIDC trust. `.github/workflows/deploy.yml` assumes a scoped IAM role via
-  OIDC (no static AWS keys in GitHub), builds + pushes both images,
-  registers a new task definition revision, rolls the ECS service with
-  `wait-for-service-stability`. Round-trip ~5 min per push to main.
+- **Provider-swappable LLM layer** — every agent calls
+  `chat_structured(...)` / `chat_text(...)` from `services/llm.py`;
+  embeddings go through `services/embed.py`. Both are one-file
+  dispatchers keyed on `LLM_PROVIDER` / `EMBED_PROVIDER`, and both
+  provider modules expose the identical shape. The live path is Azure
+  OpenAI over the OpenAI-compatible surface; the AWS Bedrock path
+  (`converse` with forced tool-use, plus a `cachePoint` after the system
+  blocks so the 50-150 line agent prompts get cached at 5-min TTL) is
+  retained behind the flag and still unit-tested. Re-pointing the whole
+  app at a different inference provider was a two-module change — which
+  is the entire argument for the dispatcher.
+- **Real cloud deploy, twice, with infra-as-code both times.** The live
+  topology is Terraform under `infra-azure/` — Container Apps environment,
+  the sidecar app, Azure OpenAI + its deployments, MySQL Flexible, blob
+  artefacts, Key Vault read through a user-assigned managed identity, and
+  the GitHub federated credential. CI logs in with an OIDC token exchanged
+  for that identity, so no cloud credential is ever stored in GitHub. The
+  earlier AWS build (~600 lines under `infra/`: VPC across 2 AZs, RDS in
+  private subnets, ALB, ECR, ECS Fargate, Secrets Manager, OIDC trust) is
+  kept as reference. Migrating between two clouds without changing an
+  agent is the part worth reading.
+- **Zero standing credentials, and a bill to match.** Runtime secrets live
+  in Key Vault and reach the container as secret references resolved by
+  managed identity; CI authenticates by workload identity federation. The
+  app scales to zero between visits, so the demo costs ~$0-3/month and the
+  cold-start honesty note in the header is a deliberate trade, not an
+  oversight.
 - **OLTP + OLAP split with a real pipeline**. Properties + leads + listings
   + agent_runs + lead_events live in RDS MySQL (transactional, normalised,
   audit log on lead status transitions, every Rai prompt persisted).
@@ -572,24 +684,31 @@ verification checklist.
 
 ## What's still deferred
 
-Phase 2 fully shipped (all 6 steps). These are honest follow-ups, not
-blockers:
+Phase 2 (AWS) shipped all six steps, and the Azure migration is live.
+These are honest follow-ups, not blockers:
 
-- **HTTPS + custom domain**. ACM cert + Route 53 A record + ALB HTTPS
-  listener with HTTP→HTTPS redirect. ~30 min once a domain is parked.
+- **Custom domain**. HTTPS is already there — Container Apps issues and
+  renews a managed certificate for the `*.azurecontainerapps.io`
+  hostname. A vanity domain needs a CNAME + a managed-certificate
+  binding; ~30 min once a domain is parked.
+- **Warm path for reviewers**. Scale-to-zero is the right default at
+  ~$0/month, but a scheduled ping (or `min_replicas = 1` for a review
+  window) would remove the first-hit wait entirely.
 - **Observability upgrade**. LangSmith or OpenTelemetry tracing so every
-  node + tool call + retry shows up in a real dashboard (stdout JSON
-  through CloudWatch works today).
+  node + tool call + retry shows up in a real dashboard (structured
+  stdout through Container Apps log analytics works today).
 - **Eval trend page** inside the app — reads `evals/results/*.json` and
   trends pass-rate-per-day with sparklines.
 - **Drag-to-close** on the mobile bottom sheet (UX polish).
-- **Multi-AZ RDS + autoscaling Fargate + WAF** — overkill for a portfolio
-  demo, deliberately omitted with cost trade-offs documented in
-  [`infra/README.md`](infra/README.md).
+- **Private networking, multi-replica, WAF** — overkill for a portfolio
+  demo, deliberately omitted. Cost and limit trade-offs are written down
+  in [`infra-azure/README.md`](infra-azure/README.md) (and, for the AWS
+  build, [`infra/README.md`](infra/README.md)).
 
 ## Credits
 
 - Sydney house-price data: [`alexlau203/sydney-house-prices`](https://www.kaggle.com/datasets/alexlau203/sydney-house-prices) on Kaggle.
 - Sydney suburb reviews: [`karltse/sydney-suburbs-reviews`](https://www.kaggle.com/datasets/karltse/sydney-suburbs-reviews) on Kaggle.
-- Reapit branding: [reapit.com.au](https://www.reapit.com.au/) and [rai.reapit.com](https://rai.reapit.com/).
+- Orb visual: [`react-ai-orb`](https://www.npmjs.com/package/react-ai-orb) (MIT), re-skinned to the Reapit palette in `PlasmaOrb.jsx`.
+- Reapit branding: [reapit.com.au](https://www.reapit.com.au/) and [rai.reapit.com](https://rai.reapit.com/). This is an unaffiliated portfolio mock, not a Reapit product.
 - Built with Claude Code.
