@@ -17,25 +17,36 @@ class Settings(BaseSettings):
         extra="ignore",
     )
 
-    # AWS Bedrock is the only chat + embed provider. (Azure OpenAI was
-    # the dev path during Phase 1; Phase 2 step 6 removed it -- the eval
-    # judge in evals/judge.py still imports openai for its own scoring
-    # workflow, that's a separate dev-only tool.)
-    # The model ID is a cross-region inference profile -- prefix tells
-    # Bedrock which geo to route through:
-    #   au. -> ap-southeast-2 (Sydney)
-    #   us. -> us-east-1 / us-west-2
-    #   eu. -> eu-* regions
-    # The bare ID `anthropic.claude-sonnet-4-6` is in-region only and
-    # may not be deployed in every region; the cross-region profile is
-    # the recommended default.
+    # ---- LLM + embedding providers -------------------------------------
+    # "github" (default): GitHub Models -- OpenAI-compatible, free
+    #   rate-limited tier, auth via a GitHub token with `models: read`
+    #   (a fine-grained PAT locally / in Azure; the built-in GITHUB_TOKEN
+    #   works in GitHub Actions).
+    # "bedrock": the original AWS deployment path (kept as reference;
+    #   needs AWS credentials + the boto3 extra).
+    llm_provider: str = "github"
+    embed_provider: str = "github"
+
+    github_models_base_url: str = "https://models.github.ai/inference"
+    github_models_token: str = ""
+    github_chat_model: str = "openai/gpt-4o-mini"
+    github_embed_model: str = "openai/text-embedding-3-small"
+    embed_dim: int = 1536  # text-embedding-3-small; Titan v2 was 1024.
+    # NOTE: switching embed provider/model requires REBUILDING the RAG
+    # parquets (scripts/build_regulation_corpus.py + build_review_embeddings.py)
+    # so corpus and query vectors come from the same model.
+
+    # Legacy Bedrock path (unused unless *_provider == "bedrock").
     aws_region: str = "ap-southeast-2"
     bedrock_chat_model: str = "au.anthropic.claude-sonnet-4-6"
     bedrock_embed_model: str = "amazon.titan-embed-text-v2:0"
-    embed_dim: int = 1024  # Titan v2 default; 256 + 512 also valid
 
-    # S3 bucket holding the trained model + RAG embedding parquets.
-    # Backend downloads on boot if these files are missing locally.
+    # ---- Artefact store (trained model + RAG parquets) -----------------
+    # Azure: public-read blob container base URL, e.g.
+    #   https://<account>.blob.core.windows.net/artefacts
+    # Backend downloads on boot if files are missing locally.
+    artefact_base_url: str = ""
+    # Legacy AWS path (unused on Azure).
     s3_artefact_bucket: str = ""
 
     # Tavily
