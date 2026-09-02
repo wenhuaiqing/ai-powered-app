@@ -52,6 +52,8 @@ jobs:
           REPO_LC=$(echo "${{ github.repository }}" | tr '[:upper:]' '[:lower:]')
           echo "backend_image=ghcr.io/${REPO_LC}/backend:${{ github.sha }}" >> "$GITHUB_OUTPUT"
           echo "frontend_image=ghcr.io/${REPO_LC}/frontend:${{ github.sha }}" >> "$GITHUB_OUTPUT"
+          echo "backend_latest=ghcr.io/${REPO_LC}/backend:latest" >> "$GITHUB_OUTPUT"
+          echo "frontend_latest=ghcr.io/${REPO_LC}/frontend:latest" >> "$GITHUB_OUTPUT"
 
       - name: Build + push backend
         uses: docker/build-push-action@v5
@@ -59,7 +61,9 @@ jobs:
           context: .
           file: backend/Dockerfile
           push: true
-          tags: ${{ steps.meta.outputs.backend_image }}
+          tags: |
+            ${{ steps.meta.outputs.backend_image }}
+            ${{ steps.meta.outputs.backend_latest }}
 
       - name: Build + push frontend
         uses: docker/build-push-action@v5
@@ -67,7 +71,9 @@ jobs:
           context: .
           file: frontend/Dockerfile
           push: true
-          tags: ${{ steps.meta.outputs.frontend_image }}
+          tags: |
+            ${{ steps.meta.outputs.frontend_image }}
+            ${{ steps.meta.outputs.frontend_latest }}
 
   deploy:
     needs: build-and-push
