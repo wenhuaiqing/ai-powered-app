@@ -72,10 +72,16 @@ resource "azurerm_key_vault_secret" "mysql_password" {
   depends_on   = [azurerm_role_assignment.kv_admin_self]
 }
 
-# ---- backend app (internal) -----------------------------------------
+# ---- the app: nginx + backend as sidecars in ONE container app ------
+#
+# Originally two apps (frontend public, backend internal). The
+# environment's internal ingress pool proved flaky under revision churn
+# (a stale Envoy pod black-holing ~1 in 7 connections), so the backend
+# now rides in the same replica and nginx proxies to 127.0.0.1:8000 -
+# no internal ingress, no second Envoy, one activation on cold start.
 
-resource "azurerm_container_app" "backend" {
-  name                         = "backend"
+resource "azurerm_container_app" "app" {
+  name                         = "app"
   container_app_environment_id = azurerm_container_app_environment.main.id
   resource_group_name          = azurerm_resource_group.main.name
   revision_mode                = "Single"
@@ -86,10 +92,8 @@ resource "azurerm_container_app" "backend" {
   }
 
   ingress {
-    external_enabled           = false # internal only
-    target_port                = 8000
-    transport                  = "http" # force HTTP/1.1 - Envoy's auto mode 426s nginx's proxy
-    allow_insecure_connections = true # nginx proxies plain http inside the env
+    external_enabled = true
+    target_port      = 80 # nginx
     traffic_weight {
       latest_revision = true
       percentage      = 100
@@ -115,6 +119,18 @@ resource "azurerm_container_app" "backend" {
   template {
     min_replicas = 0 # scale to zero: the whole point
     max_replicas = 1
+
+    container {
+      name   = "frontend"
+      image  = var.frontend_image
+      cpu    = 0.25
+      memory = "0.5Gi"
+
+      env {
+        name  = "BACKEND_UPSTREAM"
+        value = "127.0.0.1:8000"
+      }
+    }
 
     container {
       name   = "backend"
@@ -143,10 +159,6 @@ resource "azurerm_container_app" "backend" {
         value = azurerm_cognitive_deployment.embed.name
       }
       env {
-        name        = "TAVILY_API_KEY"
-        secret_name = "tavily-api-key"
-      }
-      env {
         name  = "MYSQL_HOST"
         value = azurerm_mysql_flexible_server.main.fqdn
       }
@@ -161,41 +173,6 @@ resource "azurerm_container_app" "backend" {
       env {
         name  = "MYSQL_DATABASE"
         value = azurerm_mysql_flexible_database.app.name
-      }
-    }
-  }
-}
-
-# ---- frontend app (the public front door) ---------------------------
-
-resource "azurerm_container_app" "frontend" {
-  name                         = "frontend"
-  container_app_environment_id = azurerm_container_app_environment.main.id
-  resource_group_name          = azurerm_resource_group.main.name
-  revision_mode                = "Single"
-
-  ingress {
-    external_enabled = true
-    target_port      = 80
-    traffic_weight {
-      latest_revision = true
-      percentage      = 100
-    }
-  }
-
-  template {
-    min_replicas = 0
-    max_replicas = 1
-
-    container {
-      name   = "frontend"
-      image  = var.frontend_image
-      cpu    = 0.25
-      memory = "0.5Gi"
-
-      env {
-        name  = "BACKEND_UPSTREAM"
-        value = azurerm_container_app.backend.ingress[0].fqdn
       }
     }
   }
