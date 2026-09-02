@@ -69,3 +69,6 @@ infra/.terraform.tfstate.lock.info
 
 # Terraform working dirs - provider binaries must never be committed
 **/.terraform/
+
+# Local secrets for terraform - never commit
+infra-azure/terraform.tfvars
