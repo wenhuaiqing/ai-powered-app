@@ -58,9 +58,9 @@ resource "azurerm_key_vault_secret" "tavily" {
   depends_on   = [azurerm_role_assignment.kv_admin_self]
 }
 
-resource "azurerm_key_vault_secret" "github_models" {
-  name         = "github-models-token"
-  value        = var.github_models_token
+resource "azurerm_key_vault_secret" "llm_api_key" {
+  name         = "llm-api-key"
+  value        = azurerm_cognitive_account.openai.primary_access_key
   key_vault_id = azurerm_key_vault.main.id
   depends_on   = [azurerm_role_assignment.kv_admin_self]
 }
@@ -101,8 +101,8 @@ resource "azurerm_container_app" "backend" {
     identity            = azurerm_user_assigned_identity.backend.id
   }
   secret {
-    name                = "github-models-token"
-    key_vault_secret_id = azurerm_key_vault_secret.github_models.id
+    name                = "llm-api-key"
+    key_vault_secret_id = azurerm_key_vault_secret.llm_api_key.id
     identity            = azurerm_user_assigned_identity.backend.id
   }
   secret {
@@ -126,16 +126,20 @@ resource "azurerm_container_app" "backend" {
         value = "${azurerm_storage_account.artefacts.primary_blob_endpoint}${azurerm_storage_container.artefacts.name}"
       }
       env {
-        name  = "LLM_PROVIDER"
-        value = "github"
+        name  = "LLM_BASE_URL"
+        value = "${azurerm_cognitive_account.openai.endpoint}openai/v1/"
       }
       env {
-        name  = "EMBED_PROVIDER"
-        value = "github"
+        name        = "LLM_API_KEY"
+        secret_name = "llm-api-key"
       }
       env {
-        name        = "GITHUB_MODELS_TOKEN"
-        secret_name = "github-models-token"
+        name  = "LLM_CHAT_MODEL"
+        value = azurerm_cognitive_deployment.chat.name
+      }
+      env {
+        name  = "LLM_EMBED_MODEL"
+        value = azurerm_cognitive_deployment.embed.name
       }
       env {
         name        = "TAVILY_API_KEY"

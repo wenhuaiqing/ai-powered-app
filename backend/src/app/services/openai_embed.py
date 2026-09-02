@@ -1,4 +1,4 @@
-"""GitHub Models embeddings (OpenAI-compatible, text-embedding-3-small).
+"""OpenAI-compatible embeddings (text-embedding-3-small on Azure OpenAI).
 
 Mirrors bedrock_embed's shape for the embed.py dispatcher. 1536-D by
 default (set settings.embed_dim accordingly and REBUILD the RAG corpus
@@ -18,15 +18,15 @@ from src.settings import settings
 
 log = logging.getLogger(__name__)
 
-_BATCH = 64  # keep request bodies modest for the free tier
+_BATCH = 64  # modest request bodies
 
 
 @lru_cache(maxsize=1)
 def _client():
     from openai import OpenAI
     return OpenAI(
-        base_url=settings.github_models_base_url,
-        api_key=settings.github_models_token,
+        base_url=settings.llm_base_url,
+        api_key=settings.llm_api_key,
     )
 
 
@@ -39,7 +39,7 @@ def _normalise(vec: list[float]) -> np.ndarray:
 def embed_query(text: str) -> np.ndarray:
     """Embed one query string (L2-normalised)."""
     resp = _client().embeddings.create(
-        model=settings.github_embed_model,
+        model=settings.llm_embed_model,
         input=[text],
     )
     return _normalise(resp.data[0].embedding)
@@ -52,7 +52,7 @@ def embed_batch(texts: Iterable[str]) -> list[np.ndarray]:
     for i in range(0, len(items), _BATCH):
         chunk = items[i : i + _BATCH]
         resp = _client().embeddings.create(
-            model=settings.github_embed_model,
+            model=settings.llm_embed_model,
             input=chunk,
         )
         # API preserves input order; sort by index defensively anyway.

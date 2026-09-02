@@ -1,137 +1,134 @@
 # Azure deployment - runbook
 
-Terraform for the Azure topology (Container Apps + MySQL Flexible +
-Blob + Key Vault + workload identity federation). Design rule: ~$0/month
-after the $200 trial credits - scale-to-zero apps, 12-month free MySQL
-B1ms, free blob tier, GHCR images, GitHub Models free LLM tier.
+Terraform for the Azure topology (Container Apps + Azure OpenAI + MySQL
+Flexible + Blob + Key Vault + workload identity federation). Design
+rule: ~$0/month after the $200 trial credits - scale-to-zero apps,
+12-month free MySQL B1ms, free blob tier, GHCR images, and pay-per-token
+Azure OpenAI (gpt-4.1-mini at demo volume is cents/month).
 
 ```
 Internet -> frontend (ACA, public, managed TLS)
               | nginx same-origin proxy (/api, /orb, /health)
               v
             backend (ACA, INTERNAL ingress only)
+              |-- Azure OpenAI (gpt-4.1-mini + text-embedding-3-small,
+              |     consumed via the OpenAI-compatible /openai/v1 surface)
               |-- MySQL Flexible B1ms (free 12mo)  [OLTP]
               |-- DuckDB (rebuilt from MySQL on boot) [OLAP]
               |-- Blob (public-read artefacts: model.pkl + parquets)
-              |-- Key Vault via managed identity (Tavily, PAT, MySQL pw)
-              +-- GitHub Models (chat + embeddings, free tier)
+              +-- Key Vault via managed identity (Tavily, LLM key, MySQL pw)
 ```
+
+NOTE: the trial subscription allows exactly ONE Azure OpenAI account
+(OpenAI.S0.AccountCount = 1). Terraform creates it - don't create
+another by hand or the apply will fail on quota.
 
 ## Prerequisites (one-time)
 
-1. **Azure CLI**: `winget install Microsoft.AzureCLI`, then `az login`.
-2. **Terraform**: `winget install Hashicorp.Terraform` (or any >= 1.7).
-3. **GitHub fine-grained PAT** with the **Models: read** permission
-   (github.com -> Settings -> Developer settings -> Fine-grained tokens).
-   This is the runtime LLM credential on Azure. CI needs no PAT - the
-   workflow's built-in GITHUB_TOKEN calls GitHub Models.
-4. Tavily API key (same one as before).
+1. **Azure CLI** + `az login` under the PERSONAL account. This machine
+   keeps work/personal separate via `AZURE_CONFIG_DIR`:
+   `$env:AZURE_CONFIG_DIR = "$env:USERPROFILE\.azure-personal"` before
+   any az/terraform command for this project.
+2. **Terraform** >= 1.7 (`winget install Hashicorp.Terraform`).
+3. `infra-azure/terraform.tfvars` with `tavily_api_key = "..."`
+   (gitignored; generated from .env). No other secret input - the LLM
+   key is created by Terraform and wired into Key Vault directly.
 
 ## Order of operations
 
-### 1. Rebuild the RAG parquets (embedding model changed)
+### 1. Images on GHCR
 
-Titan v2 (1024-D) corpus vectors don't match text-embedding-3-small
-(1536-D) queries - rebuild locally before uploading:
+`git push origin main` triggers `.github/workflows/deploy-azure.yml`;
+the build-and-push job publishes `backend` + `frontend` images. Then
+make both packages PUBLIC (one-time, web UI): github.com -> profile ->
+Packages -> each package -> Package settings -> Change visibility ->
+Public. ACA pulls them anonymously.
 
-```powershell
-# backend/.env: add
-#   GITHUB_MODELS_TOKEN=<your PAT>
-cd backend
-uv run --python 3.12 python ../scripts/build_regulation_corpus.py
-uv run --python 3.12 python ../scripts/build_review_embeddings.py
-```
-
-(If `data/` is empty first run `build_db.py` + `train_model.py` per the
-main README.)
-
-### 2. Push images to GHCR (bootstrap - before first apply)
-
-The container apps reference GHCR images, so they must exist first:
+### 2. Terraform apply
 
 ```powershell
-git push origin main          # also publishes the honest README
-gh workflow run deploy-azure.yml
-```
-
-The build-and-push job succeeds; the deploy job FAILS on this first run
-(no Azure secrets yet) - expected. Then make both packages public so
-ACA can pull anonymously: github.com -> your profile -> Packages ->
-`ai-powered-app/backend` + `/frontend` -> Package settings ->
-Change visibility -> Public.
-
-### 3. Terraform apply
-
-```powershell
+$env:AZURE_CONFIG_DIR = "$env:USERPROFILE\.azure-personal"
 cd infra-azure
 terraform init
-terraform apply `
-  -var "tavily_api_key=<tavily key>" `
-  -var "github_models_token=<PAT>"
+terraform apply    # ~15 min; MySQL Flexible is the slow one
 ```
 
-(~10-15 min; MySQL Flexible is the slow one.)
+### 3. Point local .env at the new Azure OpenAI (for corpus builds)
 
-### 4. Upload artefacts to the blob container
+```powershell
+"LLM_BASE_URL=$(terraform output -raw llm_base_url)"   >> ..\.env
+"LLM_API_KEY=$(terraform output -raw llm_api_key)"     >> ..\.env
+```
+
+### 4. Rebuild the RAG parquets (embedding model changed)
+
+Titan v2 (1024-D) corpus vectors don't match text-embedding-3-small
+(1536-D) queries - rebuild locally:
+
+```powershell
+cd ..\backend
+uv run --python 3.12 python ..\scripts\build_regulation_corpus.py
+uv run --python 3.12 python ..\scripts\build_review_embeddings.py
+```
+
+### 5. Upload artefacts to the blob container
 
 ```powershell
 az storage blob upload-batch `
-  --account-name $(terraform output -raw storage_account_name) `
-  --destination artefacts `
-  --source ../data `
+  --account-name $(terraform -chdir=..\infra-azure output -raw storage_account_name) `
+  --destination artefacts --source ..\data `
   --pattern "model.pkl" --pattern "*.json" `
   --pattern "reviews_embeddings.parquet" `
   --pattern "regulations/embeddings.parquet"
 ```
 
-### 5. Seed MySQL (one-off, from this machine)
+### 6. Seed MySQL (one-off, from this machine)
 
 ```powershell
 # open the firewall for your IP:
-terraform apply -var "seed_client_ip=$( (Invoke-WebRequest ifconfig.me/ip).Content.Trim() )" ...same vars...
+terraform apply -var "seed_client_ip=<your public ip>"
 
-cd ..\backend
 $env:MYSQL_HOST     = terraform -chdir=..\infra-azure output -raw mysql_fqdn
 $env:MYSQL_USER     = "appadmin"
 $env:MYSQL_PASSWORD = terraform -chdir=..\infra-azure output -raw mysql_password
 $env:MYSQL_DATABASE = "reapit_demo"
 uv run --python 3.12 python ..\scripts\seed_all.py
+
+# then close the firewall again:
+terraform apply
 ```
 
-Then re-apply without `seed_client_ip` to close the firewall again.
+### 7. Wire CI (repo secrets, one-time)
 
-### 6. Wire CI/CD (repo secrets)
+From `terraform output`: `AZURE_CLIENT_ID` (= gha_client_id),
+`AZURE_TENANT_ID`, `AZURE_SUBSCRIPTION_ID` - the deploy workflow's
+OIDC login. For the evals-smoke workflow: `LLM_BASE_URL`,
+`LLM_API_KEY`, `TAVILY_API_KEY`. After this, every push to main
+builds, pushes, and rolls both apps - no static cloud keys in CI.
 
-From `terraform output`: create GitHub repo secrets
-`AZURE_CLIENT_ID` (= gha_client_id), `AZURE_TENANT_ID`,
-`AZURE_SUBSCRIPTION_ID`. Every push to main now builds, pushes, and
-rolls both apps - no static cloud keys anywhere.
-
-### 7. Smoke it
+### 8. Smoke it
 
 ```powershell
 $url = terraform -chdir=infra-azure output -raw frontend_url
-curl "$url/health"                     # expect {"status":"ok"} (cold start ~20-40s first hit)
+curl "$url/health"     # cold start ~20-40s on the first hit
 cd backend
 uv run --python 3.12 python ..\evals\run.py --tier smoke --backend $url
 ```
 
-### 8. Afterwards
+### 9. Afterwards
 
 - Update the main README's demo-status block with the live URL.
 - **Day 30**: upgrade the subscription to pay-as-you-go (Portal banner)
-  or Azure stops the services when trial credits lapse. With this
-  design the ongoing bill is ~$0-3/month.
-- Optional: `az consumption budget` alert at $10/month for peace of mind.
+  or Azure stops the services when trial credits lapse. Ongoing bill
+  with this design: ~$0-3/month + LLM cents.
+- Optional: `az consumption budget` alert at $10/month.
 
 ## Known limits (by design)
 
 - **Cold starts**: scale-to-zero means the first request after idle
   pays image pull + artefact download + DuckDB rebuild (~20-40s).
-  Fine for a portfolio demo; the README can say so honestly.
-- **GitHub Models free tier**: per-minute + per-day caps (gpt-4o-mini
-  tier). A multi-agent run is 3-6 calls; budget ~25-40 demo prompts/day.
-  On a 429 the planner's heuristic fallback keeps the demo functional -
-  graceful degradation doing its job.
+  Fine for a portfolio demo; the README says so honestly.
 - **MySQL free window**: B1ms is free for 12 months on a free account,
   then ~$15-20/month - revisit before Aug 2027.
+- **Model deprecation**: gpt-4.1-mini retires 2027-04. Swapping models
+  is a config change (new azurerm_cognitive_deployment + env value).

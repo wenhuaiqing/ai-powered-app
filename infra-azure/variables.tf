@@ -34,12 +34,6 @@ variable "tavily_api_key" {
   sensitive   = true
 }
 
-variable "github_models_token" {
-  description = "GitHub fine-grained PAT with `models: read` (stored in Key Vault)."
-  type        = string
-  sensitive   = true
-}
-
 variable "seed_client_ip" {
   description = "Optional: your public IP, to open MySQL for the one-off local seed run. Leave empty to keep MySQL Azure-only."
   type        = string

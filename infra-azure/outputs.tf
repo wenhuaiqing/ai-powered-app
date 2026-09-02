@@ -45,3 +45,13 @@ output "subscription_id" {
   description = "Set as repo secret AZURE_SUBSCRIPTION_ID."
   value       = data.azurerm_client_config.current.subscription_id
 }
+
+output "llm_base_url" {
+  description = "OpenAI-compatible base URL (for local .env during corpus builds)."
+  value       = "${azurerm_cognitive_account.openai.endpoint}openai/v1/"
+}
+
+output "llm_api_key" {
+  value     = azurerm_cognitive_account.openai.primary_access_key
+  sensitive = true
+}

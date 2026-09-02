@@ -18,19 +18,18 @@ class Settings(BaseSettings):
     )
 
     # ---- LLM + embedding providers -------------------------------------
-    # "github" (default): GitHub Models -- OpenAI-compatible, free
-    #   rate-limited tier, auth via a GitHub token with `models: read`
-    #   (a fine-grained PAT locally / in Azure; the built-in GITHUB_TOKEN
-    #   works in GitHub Actions).
+    # "openai" (default): any OpenAI-compatible endpoint. The deployment
+    #   uses Azure OpenAI's /openai/v1 surface (gpt-4.1-mini +
+    #   text-embedding-3-small on the demo's own Azure subscription).
     # "bedrock": the original AWS deployment path (kept as reference;
     #   needs AWS credentials + the boto3 extra).
-    llm_provider: str = "github"
-    embed_provider: str = "github"
+    llm_provider: str = "openai"
+    embed_provider: str = "openai"
 
-    github_models_base_url: str = "https://models.github.ai/inference"
-    github_models_token: str = ""
-    github_chat_model: str = "openai/gpt-4o-mini"
-    github_embed_model: str = "openai/text-embedding-3-small"
+    llm_base_url: str = ""
+    llm_api_key: str = ""
+    llm_chat_model: str = "gpt-4-1-mini"
+    llm_embed_model: str = "text-embedding-3-small"
     embed_dim: int = 1536  # text-embedding-3-small; Titan v2 was 1024.
     # NOTE: switching embed provider/model requires REBUILDING the RAG
     # parquets (scripts/build_regulation_corpus.py + build_review_embeddings.py)

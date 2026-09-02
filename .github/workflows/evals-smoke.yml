@@ -17,17 +17,14 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
 
-    permissions:
-      contents: read
-      models: read # lets the built-in GITHUB_TOKEN call GitHub Models
-
     env:
       # The Tier 3 smoke needs the real LLM in the loop because it
       # asserts on actual planner output and answer content, not just
-      # heuristic routing. GitHub Models accepts the workflow's own
-      # GITHUB_TOKEN (models: read above) — no LLM secret required.
-      GITHUB_MODELS_TOKEN: ${{ github.token }}
-      TAVILY_API_KEY:      ${{ secrets.TAVILY_API_KEY }}
+      # heuristic routing. Set repo secrets LLM_BASE_URL + LLM_API_KEY
+      # from `terraform -chdir=infra-azure output` (Azure OpenAI).
+      LLM_BASE_URL:   ${{ secrets.LLM_BASE_URL }}
+      LLM_API_KEY:    ${{ secrets.LLM_API_KEY }}
+      TAVILY_API_KEY: ${{ secrets.TAVILY_API_KEY }}
       PYTHONUTF8: "1"
 
     steps:

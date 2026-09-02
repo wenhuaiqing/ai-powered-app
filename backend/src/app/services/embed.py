@@ -7,7 +7,7 @@ Both retrievers (regulations, reviews) and both build scripts go through
 this module so the embedding model is configured in one place.
 
 Provider is chosen by settings.embed_provider:
-  "github"  -> GitHub Models text-embedding-3-small (1536-D)
+  "openai"  -> OpenAI-compatible endpoint, text-embedding-3-small (1536-D)
   "bedrock" -> AWS Bedrock Titan v2 (1024-D; the original AWS path)
 
 IMPORTANT: query vectors and corpus vectors must come from the SAME
@@ -32,8 +32,8 @@ def _backend():
     if settings.embed_provider == "bedrock":
         from src.app.services import bedrock_embed
         return bedrock_embed
-    from src.app.services import github_embed
-    return github_embed
+    from src.app.services import openai_embed
+    return openai_embed
 
 
 def embed_query(text: str) -> np.ndarray | None:
