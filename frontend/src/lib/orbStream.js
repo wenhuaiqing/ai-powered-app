@@ -3,16 +3,34 @@
 
 import { API_BASE_URL } from "../config.js";
 
+// Scale-to-zero hosting can bounce a request during scale transitions
+// (the ingress briefly has no endpoint and no armed activator). Retry
+// the initial POST a couple of times before giving up; steady-state
+// cold starts are held by the platform itself, so the spinner covers
+// the wait either way.
+const RETRY_DELAYS_MS = [4000, 8000];
+
 export async function* streamAgent(path, body, signal) {
-  const res = await fetch(`${API_BASE_URL}${path}`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", "Accept": "text/event-stream" },
-    body: JSON.stringify(body),
-    signal,
-  });
-  if (!res.ok || !res.body) {
-    const text = await res.text().catch(() => "");
-    throw new Error(`HTTP ${res.status} ${text.slice(0, 200)}`);
+  let res;
+  for (let attempt = 0; ; attempt++) {
+    try {
+      res = await fetch(`${API_BASE_URL}${path}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "Accept": "text/event-stream" },
+        body: JSON.stringify(body),
+        signal,
+      });
+    } catch (e) {
+      if (e?.name === "AbortError" || attempt >= RETRY_DELAYS_MS.length) throw e;
+      await new Promise((r) => setTimeout(r, RETRY_DELAYS_MS[attempt]));
+      continue;
+    }
+    if (res.ok && res.body) break;
+    if (attempt >= RETRY_DELAYS_MS.length || signal?.aborted) {
+      const text = await res.text().catch(() => "");
+      throw new Error(`HTTP ${res.status} ${text.slice(0, 200)}`);
+    }
+    await new Promise((r) => setTimeout(r, RETRY_DELAYS_MS[attempt]));
   }
   yield* readSse(res.body, signal);
 }
