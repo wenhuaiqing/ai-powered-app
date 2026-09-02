@@ -15,6 +15,12 @@ resource "azurerm_container_app_environment" "main" {
   location                   = azurerm_resource_group.main.location
   resource_group_name        = azurerm_resource_group.main.name
   log_analytics_workspace_id = azurerm_log_analytics_workspace.main.id
+
+  # Azure auto-attaches a "Consumption" workload profile to new
+  # environments; we don't manage it, so don't fight the drift.
+  lifecycle {
+    ignore_changes = [workload_profile]
+  }
 }
 
 # ---- identity + Key Vault -------------------------------------------
@@ -28,13 +34,13 @@ resource "azurerm_user_assigned_identity" "backend" {
 data "azurerm_client_config" "current" {}
 
 resource "azurerm_key_vault" "main" {
-  name                      = "kv-${var.prefix}-${random_string.storage_suffix.result}"
-  location                  = azurerm_resource_group.main.location
-  resource_group_name       = azurerm_resource_group.main.name
-  tenant_id                 = data.azurerm_client_config.current.tenant_id
-  sku_name                  = "standard"
+  name                       = "kv-${var.prefix}-${random_string.storage_suffix.result}"
+  location                   = azurerm_resource_group.main.location
+  resource_group_name        = azurerm_resource_group.main.name
+  tenant_id                  = data.azurerm_client_config.current.tenant_id
+  sku_name                   = "standard"
   rbac_authorization_enabled = true
-  purge_protection_enabled  = false
+  purge_protection_enabled   = false
 }
 
 # Terraform (the operator) writes secrets.
@@ -111,6 +117,17 @@ resource "azurerm_container_app" "app" {
   identity {
     type         = "UserAssigned"
     identity_ids = [azurerm_user_assigned_identity.backend.id]
+  }
+
+  # CI rolls images by SHA with `az containerapp update`; Terraform owns
+  # everything else. Ignore the image + the auto-set workload profile so a
+  # config apply never swaps the running build.
+  lifecycle {
+    ignore_changes = [
+      workload_profile_name,
+      template[0].container[0].image,
+      template[0].container[1].image,
+    ]
   }
 
   ingress {
