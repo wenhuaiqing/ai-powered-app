@@ -21,7 +21,7 @@ ALLOWED_TABLES = {
 FORBIDDEN_KEYWORDS = {
     "insert", "update", "delete", "drop", "truncate", "alter", "create",
     "attach", "detach", "copy", "export", "import", "pragma", "set", "call",
-    "grant", "revoke", "merge", "vacuum",
+    "grant", "revoke", "merge", "vacuum", "install", "load",
 }
 
 DEFAULT_LIMIT = 100
@@ -47,6 +47,12 @@ def _statement_count(sql: str) -> int:
     # a demo — the LLM rarely produces string literals containing ; here).
     cleaned = sql.strip().rstrip(";")
     return cleaned.count(";") + 1 if cleaned else 0
+
+
+# FROM/JOIN followed by a string literal is DuckDB's replacement scan over a
+# file path or URL (`FROM 'data.csv'`, `FROM 'https://host/x.parquet'`).
+# The identifier regex below would silently skip it, so reject explicitly.
+_QUOTED_SOURCE = re.compile(r"\b(?:from|join)\s+'", re.IGNORECASE)
 
 
 def _extract_tables(sql: str) -> set[str]:
@@ -102,6 +108,9 @@ def validate(sql: str) -> ValidationOutcome:
     for kw in FORBIDDEN_KEYWORDS:
         if re.search(rf"\b{re.escape(kw)}\b", lowered):
             errors.append(f"forbidden keyword: {kw}")
+
+    if _QUOTED_SOURCE.search(lowered):
+        errors.append("file or URL sources are not allowed; query the allowlisted tables")
 
     tables = _extract_tables(cleaned)
     cte_names = _extract_cte_names(cleaned)

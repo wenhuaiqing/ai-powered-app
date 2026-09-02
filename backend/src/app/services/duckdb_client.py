@@ -18,7 +18,14 @@ def get_conn() -> Iterator[duckdb.DuckDBPyConnection]:
         raise RuntimeError(
             f"DuckDB not found at {path}. Run `python scripts/build_db.py` first."
         )
-    conn = duckdb.connect(str(path), read_only=True)
+    # enable_external_access=False blocks replacement scans and table
+    # functions over files/URLs (read_csv, FROM 'x.parquet', httpfs ...) so
+    # LLM-generated SQL can only see what is inside the database file.
+    conn = duckdb.connect(
+        str(path),
+        read_only=True,
+        config={"enable_external_access": False},
+    )
     try:
         yield conn
     finally:

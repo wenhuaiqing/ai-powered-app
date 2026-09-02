@@ -1,7 +1,7 @@
 // Shared SSE consumer used by the orb panel and the agent buttons.
 // Reads /orb/chat or /orb/run-agent and yields typed events.
 
-import { API_BASE_URL } from "../config.js";
+import { API_BASE_URL, authHeaders } from "../config.js";
 
 // Scale-to-zero hosting can bounce a request during scale transitions
 // (the ingress briefly has no endpoint and no armed activator). Retry
@@ -16,7 +16,7 @@ export async function* streamAgent(path, body, signal) {
     try {
       res = await fetch(`${API_BASE_URL}${path}`, {
         method: "POST",
-        headers: { "Content-Type": "application/json", "Accept": "text/event-stream" },
+        headers: { "Content-Type": "application/json", "Accept": "text/event-stream", ...authHeaders() },
         body: JSON.stringify(body),
         signal,
       });

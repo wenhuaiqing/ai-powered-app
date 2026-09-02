@@ -29,6 +29,7 @@ def record_run(
     duration_ms: int,
     related_lead_id: str | None = None,
     related_listing_id: str | None = None,
+    trusted: bool = False,
 ) -> int | None:
     """Insert one agent_runs row. Returns the row id, or None on failure."""
     try:
@@ -36,11 +37,11 @@ def record_run(
             """
             INSERT INTO agent_runs (
                 user_message, page_module, agents_called, final_message,
-                used_web_search, error_count, duration_ms,
+                used_web_search, error_count, trusted, duration_ms,
                 related_lead_id, related_listing_id
             ) VALUES (
                 :user_message, :page_module, :agents_called, :final_message,
-                :used_web_search, :error_count, :duration_ms,
+                :used_web_search, :error_count, :trusted, :duration_ms,
                 :related_lead_id, :related_listing_id
             )
             """,
@@ -51,6 +52,7 @@ def record_run(
                 "final_message":     final_message,
                 "used_web_search":   1 if used_web_search else 0,
                 "error_count":       int(error_count),
+                "trusted":           1 if trusted else 0,
                 "duration_ms":       int(duration_ms),
                 "related_lead_id":   related_lead_id,
                 "related_listing_id": related_listing_id,
@@ -77,6 +79,7 @@ def from_event_log(
     page_context: dict[str, Any] | None,
     events: list[tuple[str, dict[str, Any]]],
     duration_ms: int,
+    trusted: bool = False,
 ) -> int | None:
     """Helper: derive the summary fields from the queue's event log."""
     agents_called: list[str] = []
@@ -109,4 +112,35 @@ def from_event_log(
         duration_ms=duration_ms,
         related_lead_id=lead_id,
         related_listing_id=listing_id,
+        trusted=trusted,
     )
+
+
+_AGENT_LABELS = {
+    "compliance":   "Compliance check",
+    "data_query":   "Data query",
+    "matcher":      "Property match",
+    "valuation":    "Valuation",
+    "listing":      "Listing draft",
+    "lead_triage":  "Lead triage",
+    "market_watch": "Market watch",
+    "general":      "General question",
+}
+
+
+def public_label(
+    agents_called: list[str],
+    page_module: str | None,
+    related_lead_id: str | None = None,
+    related_listing_id: str | None = None,
+) -> str:
+    """Generated description of an anonymous run for the public Dashboard
+    feed, so visitor-supplied prompt text is never shown to other visitors."""
+    names = [_AGENT_LABELS.get(a, a.replace("_", " ").title()) for a in agents_called] or ["Orb run"]
+    label = " + ".join(names)
+    if page_module and page_module != "dashboard":
+        label += f" from {page_module.replace('_', ' ').title()}"
+    ref = related_listing_id or related_lead_id
+    if ref:
+        label += f" ({ref})"
+    return label

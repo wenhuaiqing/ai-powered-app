@@ -405,6 +405,7 @@ export default function UnifiedOrb({ dockedHidden = false } = {}) {
         <input
           autoFocus={autoFocus}
           type="text"
+          maxLength={2000}
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && submit()}
@@ -460,6 +461,7 @@ export default function UnifiedOrb({ dockedHidden = false } = {}) {
       <input
         autoFocus={autoFocus}
         type="text"
+        maxLength={2000}
         value={input}
         onChange={(e) => setInput(e.target.value)}
         onKeyDown={(e) => e.key === "Enter" && submit()}
