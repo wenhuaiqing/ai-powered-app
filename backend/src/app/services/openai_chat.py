@@ -23,8 +23,10 @@ from __future__ import annotations
 
 import json
 import logging
+import re
+import time
 from functools import lru_cache
-from typing import Any, TypeVar
+from typing import Any, Callable, TypeVar
 
 from pydantic import BaseModel, ValidationError
 
@@ -43,6 +45,58 @@ def _client():
         base_url=settings.llm_base_url,
         api_key=settings.llm_api_key,
     )
+
+
+# A node has a 30s budget (see the LangGraph harness), so a retry is
+# only worth attempting when the provider asks for a short wait.
+_MAX_RATE_LIMIT_RETRIES = 2
+_MAX_RATE_LIMIT_WAIT = 5.0
+
+
+def _retry_after_seconds(exc: Exception) -> float | None:
+    """Seconds the provider asked us to wait, or None if it didn't say."""
+    response = getattr(exc, "response", None)
+    if response is not None:
+        try:
+            header = response.headers.get("retry-after")
+        except Exception:  # noqa: BLE001 - header access varies by transport
+            header = None
+        if header:
+            try:
+                return float(header)
+            except ValueError:
+                pass
+    # Gemini reports it in the body rather than a header.
+    match = re.search(r"'retryDelay': '(\d+(?:\.\d+)?)s'", str(exc))
+    return float(match.group(1)) if match else None
+
+
+def _with_rate_limit_retry(call: Callable[[], Any]) -> Any:
+    """Run `call`, retrying briefly on 429.
+
+    Free-tier endpoints meter per minute and the graph is sequential, so
+    going over is usually a matter of a call or two -- a short wait
+    clears it. A long wait cannot be honoured: exceeding the node budget
+    turns a recoverable blip into a timeout, so we give up and let the
+    caller degrade, which it already knows how to do.
+    """
+    from openai import RateLimitError
+
+    for attempt in range(_MAX_RATE_LIMIT_RETRIES + 1):
+        try:
+            return call()
+        except RateLimitError as exc:
+            wait = _retry_after_seconds(exc)
+            if attempt == _MAX_RATE_LIMIT_RETRIES or (wait or 0) > _MAX_RATE_LIMIT_WAIT:
+                log.warning(
+                    "rate limited (provider asked for %s); giving up after %d attempt(s)",
+                    f"{wait:.0f}s" if wait else "no delay",
+                    attempt + 1,
+                )
+                raise
+            delay = wait if wait is not None else 2.0
+            log.info("rate limited; retrying in %.1fs", delay)
+            time.sleep(delay)
 
 
 def _tool_name(response_model: type[BaseModel]) -> str:
@@ -90,7 +144,7 @@ def chat_structured(
     """Structured output via forced tool call. Returns a validated model."""
     schema = _inline_defs(response_model.model_json_schema())
     name = _tool_name(response_model)
-    completion = _client().chat.completions.create(
+    completion = _with_rate_limit_retry(lambda: _client().chat.completions.create(
         model=model or settings.llm_chat_model,
         messages=messages,
         temperature=temperature,
@@ -103,7 +157,7 @@ def chat_structured(
             },
         }],
         tool_choice={"type": "function", "function": {"name": name}},
-    )
+    ))
     msg = completion.choices[0].message
     if msg.tool_calls:
         raw = msg.tool_calls[0].function.arguments
@@ -132,12 +186,12 @@ def _chat_structured_json_fallback(
             f"JSON schema (no prose, no code fences):\n{schema}"
         ),
     }]
-    completion = _client().chat.completions.create(
+    completion = _with_rate_limit_retry(lambda: _client().chat.completions.create(
         model=model or settings.llm_chat_model,
         messages=augmented,
         temperature=temperature,
         response_format={"type": "json_object"},
-    )
+    ))
     content = completion.choices[0].message.content or ""
     return response_model.model_validate_json(content)
 
@@ -149,9 +203,9 @@ def chat_text(
     temperature: float = 0.0,
 ) -> str:
     """Plain-text chat completion."""
-    completion = _client().chat.completions.create(
+    completion = _with_rate_limit_retry(lambda: _client().chat.completions.create(
         model=model or settings.llm_chat_model,
         messages=messages,
         temperature=temperature,
-    )
+    ))
     return completion.choices[0].message.content or ""
