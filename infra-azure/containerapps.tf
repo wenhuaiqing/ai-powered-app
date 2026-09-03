@@ -71,6 +71,15 @@ resource "azurerm_key_vault_secret" "llm_api_key" {
   depends_on   = [azurerm_role_assignment.kv_admin_self]
 }
 
+# Chat key. Gemini's free tier when var.gemini_api_key is set (the demo's
+# zero-cost posture), otherwise the Azure OpenAI key.
+resource "azurerm_key_vault_secret" "chat_api_key" {
+  name         = "chat-api-key"
+  value        = var.gemini_api_key != "" ? var.gemini_api_key : azurerm_cognitive_account.openai.primary_access_key
+  key_vault_id = azurerm_key_vault.main.id
+  depends_on   = [azurerm_role_assignment.kv_admin_self]
+}
+
 resource "azurerm_key_vault_secret" "mysql_password" {
   name         = "mysql-password"
   value        = random_password.mysql.result
@@ -145,8 +154,13 @@ resource "azurerm_container_app" "app" {
     identity            = azurerm_user_assigned_identity.backend.id
   }
   secret {
-    name                = "llm-api-key"
+    name                = "llm-api-key" # Azure OpenAI -- embeddings only now
     key_vault_secret_id = azurerm_key_vault_secret.llm_api_key.id
+    identity            = azurerm_user_assigned_identity.backend.id
+  }
+  secret {
+    name                = "chat-api-key"
+    key_vault_secret_id = azurerm_key_vault_secret.chat_api_key.id
     identity            = azurerm_user_assigned_identity.backend.id
   }
   secret {
@@ -186,17 +200,29 @@ resource "azurerm_container_app" "app" {
         name  = "ARTEFACT_BASE_URL"
         value = "${azurerm_storage_account.artefacts.primary_blob_endpoint}${azurerm_storage_container.artefacts.name}"
       }
+      # Chat on Gemini's free tier (AUD 0 tokens), embeddings left on
+      # Azure OpenAI: query-time embedding spend rounds to nothing and
+      # moving it would mean rebuilding the RAG parquets. Unset the
+      # gemini_api_key var and both fall back to Azure OpenAI.
       env {
         name  = "LLM_BASE_URL"
-        value = "${azurerm_cognitive_account.openai.endpoint}openai/v1/"
+        value = var.gemini_api_key != "" ? "https://generativelanguage.googleapis.com/v1beta/openai/" : "${azurerm_cognitive_account.openai.endpoint}openai/v1/"
       }
       env {
         name        = "LLM_API_KEY"
-        secret_name = "llm-api-key"
+        secret_name = "chat-api-key"
       }
       env {
         name  = "LLM_CHAT_MODEL"
-        value = azurerm_cognitive_deployment.chat.name
+        value = var.gemini_api_key != "" ? var.gemini_chat_model : azurerm_cognitive_deployment.chat.name
+      }
+      env {
+        name  = "EMBED_BASE_URL"
+        value = "${azurerm_cognitive_account.openai.endpoint}openai/v1/"
+      }
+      env {
+        name        = "EMBED_API_KEY"
+        secret_name = "llm-api-key"
       }
       env {
         name  = "LLM_EMBED_MODEL"

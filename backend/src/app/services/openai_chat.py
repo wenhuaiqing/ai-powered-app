@@ -24,7 +24,7 @@ from __future__ import annotations
 import json
 import logging
 from functools import lru_cache
-from typing import TypeVar
+from typing import Any, TypeVar
 
 from pydantic import BaseModel, ValidationError
 
@@ -49,6 +49,37 @@ def _tool_name(response_model: type[BaseModel]) -> str:
     return f"emit_{response_model.__name__.lower()}"
 
 
+def _inline_defs(schema: dict[str, Any]) -> dict[str, Any]:
+    """Return an equivalent schema with `$defs`/`$ref` inlined.
+
+    Pydantic hoists nested models into `$defs` and points at them with
+    `$ref`. Azure OpenAI resolves those; other OpenAI-compatible layers
+    (Gemini's among them) reject refs inside a tool's parameters schema.
+    A rejection is an API error, which is raised before the JSON-mode
+    fallback below can catch it, so the planner would fail outright
+    rather than degrade. Inlining keeps one code path valid everywhere.
+    """
+    defs = schema.get("$defs", {})
+
+    def resolve(node: Any, seen: frozenset[str]) -> Any:
+        if isinstance(node, list):
+            return [resolve(n, seen) for n in node]
+        if not isinstance(node, dict):
+            return node
+        ref = node.get("$ref")
+        if isinstance(ref, str) and ref.startswith("#/$defs/"):
+            key = ref.rsplit("/", 1)[-1]
+            if key not in defs or key in seen:
+                # Missing or self-referential: an open object beats a loop.
+                return {"type": "object"}
+            target = resolve(defs[key], seen | {key})
+            siblings = {k: v for k, v in node.items() if k != "$ref"}
+            return {**target, **siblings} if siblings else target
+        return {k: resolve(v, seen) for k, v in node.items() if k != "$defs"}
+
+    return resolve(schema, frozenset())
+
+
 def chat_structured(
     messages: list[dict[str, str]],
     response_model: type[M],
@@ -57,7 +88,7 @@ def chat_structured(
     temperature: float = 0.0,
 ) -> M:
     """Structured output via forced tool call. Returns a validated model."""
-    schema = response_model.model_json_schema()
+    schema = _inline_defs(response_model.model_json_schema())
     name = _tool_name(response_model)
     completion = _client().chat.completions.create(
         model=model or settings.llm_chat_model,
@@ -93,7 +124,7 @@ def _chat_structured_json_fallback(
     temperature: float = 0.0,
 ) -> M:
     """Fallback: ask for raw JSON matching the schema and validate it."""
-    schema = json.dumps(response_model.model_json_schema())
+    schema = json.dumps(_inline_defs(response_model.model_json_schema()))
     augmented = list(messages) + [{
         "role": "user",
         "content": (

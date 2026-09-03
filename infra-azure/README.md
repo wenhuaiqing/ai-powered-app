@@ -2,9 +2,10 @@
 
 Terraform for the Azure topology (Container Apps + Azure OpenAI + MySQL
 Flexible + Blob + Key Vault + workload identity federation). Design
-rule: ~$0/month after the $200 trial credits - scale-to-zero apps,
-12-month free MySQL B1ms, free blob tier, GHCR images, and pay-per-token
-Azure OpenAI (gpt-4.1-mini at demo volume is cents/month).
+rule: **AUD 0/month** after the $200 trial credits - scale-to-zero
+apps, 12-month free MySQL B1ms, free blob tier, GHCR images, and chat on
+Gemini's free tier. Azure OpenAI is kept for embeddings only (a query
+embedding is ~40 tokens, so it rounds to 0.00 on the invoice).
 
 ```
 Internet -> frontend (ACA, public, managed TLS)
@@ -36,7 +37,12 @@ another by hand or the apply will fail on quota.
    `$env:AZURE_CONFIG_DIR = "$env:USERPROFILE\.azure-personal"` before
    any az/terraform command for this project.
 2. **Terraform** >= 1.7 (`winget install Hashicorp.Terraform`).
-3. `infra-azure/terraform.tfvars` with `tavily_api_key = "..."`
+3. `infra-azure/terraform.tfvars` (gitignored) with
+   `tavily_api_key = "..."` and `gemini_api_key = "..."` - the latter is
+   a Google AI Studio key (aistudio.google.com/apikey) and is what keeps
+   the LLM bill at zero. Omit it and chat falls back to Azure OpenAI at
+   ~AUD 1-3/month. It must stay in tfvars: a bare `terraform apply`
+   without it reverts chat to Azure OpenAI.
    (gitignored; generated from .env). No other secret input - the LLM
    key is created by Terraform and wired into Key Vault directly.
 
@@ -153,17 +159,45 @@ uv run --python 3.12 python ..\evals\run.py --tier smoke --backend $url
 ### 10. Afterwards
 
 - Update the main README's demo-status block with the live URL.
-- **Day 30**: upgrade the subscription to pay-as-you-go (Portal banner)
-  or Azure stops the services when trial credits lapse. Ongoing bill
-  with this design: ~$0-3/month + LLM cents.
-- Optional: `az consumption budget` alert at $10/month.
+- ~~Day 30~~ **PAYG upgrade done 03/09/2026.** Do it early, not on
+  day 30: the credit stays usable for the full 30 days from signup, so
+  upgrading early forfeits nothing and removes the deadline. Pick the
+  free **Basic** support plan - Developer is ~$29/month.
+- Budget `budget-aipapp-monthly` exists (AUD 10/month, alerts at
+  50/80/100% actual + 100% forecast). Created with
+  `az deployment sub create`, **not** Terraform - codify it here if this
+  stack is rebuilt. PAYG has no hard spending cap; the budget only
+  alerts.
 
 ## Known limits (by design)
 
 - **Cold starts**: scale-to-zero means the first request after idle
   pays image pull + artefact download + DuckDB rebuild (~20-40s).
   Fine for a portfolio demo; the README says so honestly.
-- **MySQL free window**: B1ms is free for 12 months on a free account,
-  then ~$15-20/month - revisit before Aug 2027.
+- **Container Apps free grant**: the never-expiring 180k vCPU-s +
+  360k GiB-s covers 0.75 vCPU / 1.5 GiB of sidecars for **66 h of
+  active replica time per month**. Both meters bind at the same point.
+  Depends on `min_replicas = 0`; setting it to 1 is 730 h/month and
+  leaves the grant entirely. Price it before flipping it.
+- **MySQL free window**: B1ms is free for 12 months, then **AUD ~30/month**
+  at australiaeast list (B1MS 0.0362/h = 26.43, plus 20 GB at
+  0.1919/GB = 3.84) - roughly double the USD figure this file used to
+  quote. Revisit before **Sep 2027**. Decided replacement: the **Azure
+  SQL Database free offer** - 100k vCore-s + 32 GB per database per
+  month for the *lifetime* of the subscription, and its default at the
+  limit is auto-pause, not billing. Cost is a T-SQL dialect port
+  (driver in `mysql_client.py`, `lastrowid` -> `SCOPE_IDENTITY()`,
+  AUTO_INCREMENT/utf8mb4/ON UPDATE in `scripts/migrate_mysql.py`,
+  `LIMIT` -> `OFFSET...FETCH`). Zero-code fallback: TiDB Cloud Starter,
+  which is MySQL wire-compatible. Aiven's free MySQL is out - it reaps
+  services left idle, which is exactly this demo's pattern.
+- **Gemini free-tier limits**: chat runs on `gemini-3.5-flash` free
+  tier. Google no longer publishes static limits (they are per-project,
+  visible in AI Studio), but reported figures are ~15 RPM. The Property
+  Matcher run fans valuation out across ~5 candidates, so it can reach
+  12-15 calls in a minute - the closest thing to a ceiling here. A 429
+  degrades to keyword routing rather than failing, but it will look
+  worse in a live demo. Set `gemini_api_key = ""` to fall straight back
+  to Azure OpenAI.
 - **Model deprecation**: gpt-4.1-mini retires 2027-04. Swapping models
   is a config change (new azurerm_cognitive_deployment + env value).
