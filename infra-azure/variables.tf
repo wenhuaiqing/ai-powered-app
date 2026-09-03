@@ -34,6 +34,19 @@ variable "tavily_api_key" {
   sensitive   = true
 }
 
+variable "gemini_api_key" {
+  description = "Google AI Studio key. Chat runs on Gemini's free tier so the demo bills nothing; leave empty to keep chat on Azure OpenAI."
+  type        = string
+  sensitive   = true
+  default     = ""
+}
+
+variable "gemini_chat_model" {
+  description = "Gemini model id for chat. Free tier: gemini-3.5-flash (best quality) or gemini-3.5-flash-lite (higher daily quota)."
+  type        = string
+  default     = "gemini-3.5-flash"
+}
+
 variable "seed_client_ip" {
   description = "Optional: your public IP, to open MySQL for the one-off local seed run. Leave empty to keep MySQL Azure-only."
   type        = string

@@ -4,6 +4,10 @@ Mirrors bedrock_embed's shape for the embed.py dispatcher. 1536-D by
 default (set settings.embed_dim accordingly and REBUILD the RAG corpus
 parquets when switching providers -- query and corpus vectors must come
 from the same model).
+
+Reads settings.embed_endpoint / embed_key rather than the llm_* pair, so
+embeddings can stay on Azure OpenAI while chat runs somewhere else. Both
+fall back to the llm_* values when unset.
 """
 
 from __future__ import annotations
@@ -27,18 +31,19 @@ def _client():
     # of 2026-09) returns DeploymentNotFound for embeddings. Use the GA
     # deployments endpoint on Azure hosts; plain OpenAI-compatible
     # endpoints keep the generic client.
-    if ".openai.azure.com" in settings.llm_base_url:
+    base_url = settings.embed_endpoint
+    if ".openai.azure.com" in base_url:
         from openai import AzureOpenAI
-        endpoint = settings.llm_base_url.split("/openai/")[0]
+        endpoint = base_url.split("/openai/")[0]
         return AzureOpenAI(
             azure_endpoint=endpoint,
-            api_key=settings.llm_api_key,
+            api_key=settings.embed_key,
             api_version="2024-10-21",
         )
     from openai import OpenAI
     return OpenAI(
-        base_url=settings.llm_base_url,
-        api_key=settings.llm_api_key,
+        base_url=base_url,
+        api_key=settings.embed_key,
     )
 
 

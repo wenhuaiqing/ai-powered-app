@@ -35,6 +35,25 @@ class Settings(BaseSettings):
     # parquets (scripts/build_regulation_corpus.py + build_review_embeddings.py)
     # so corpus and query vectors come from the same model.
 
+    # Embeddings may sit on a DIFFERENT endpoint to chat. The live deploy
+    # runs chat on Gemini's free tier (zero token cost) but keeps
+    # embeddings on Azure OpenAI, because moving them means rebuilding
+    # the RAG parquets and query-time embedding spend rounds to nothing.
+    # Leave both unset for a single-provider setup -- they then fall back
+    # to the llm_* values, which is the old behaviour exactly.
+    embed_base_url: str = ""
+    embed_api_key: str = ""
+
+    @property
+    def embed_endpoint(self) -> str:
+        """Base URL for embeddings; falls back to the chat endpoint."""
+        return self.embed_base_url or self.llm_base_url
+
+    @property
+    def embed_key(self) -> str:
+        """API key for embeddings; falls back to the chat key."""
+        return self.embed_api_key or self.llm_api_key
+
     # Legacy Bedrock path (unused unless *_provider == "bedrock").
     aws_region: str = "ap-southeast-2"
     bedrock_chat_model: str = "au.anthropic.claude-sonnet-4-6"

@@ -206,10 +206,14 @@ MySQL Flexible → execs uvicorn. First request after idle: ~30-60s.
 MySQL is the source of truth for OLTP data; Blob is the source of truth
 for the trained model + RAG corpora.
 
-**Cost posture:** scale-to-zero apps, 12-month-free B1ms MySQL, free
-blob tier, GHCR images, pay-per-token Azure OpenAI — ~$0-3/month at
-demo volume, deliberately. Trade-offs and the day-30 pay-as-you-go step
-are in [`infra-azure/README.md`](infra-azure/README.md).
+**Cost posture:** AUD 0/month, deliberately — not "cheap", zero.
+Scale-to-zero apps inside the never-expiring Container Apps grant,
+12-month-free B1ms MySQL, free blob tier, GHCR images, and **chat on
+Gemini's free tier** so LLM tokens bill nothing. Embeddings stay on
+Azure OpenAI because query-time embedding spend rounds to zero and
+moving them means rebuilding the RAG corpus. Trade-offs, the free-grant
+headroom, and the Sep 2027 MySQL cliff are in
+[`infra-azure/README.md`](infra-azure/README.md).
 
 ## Data architecture
 
