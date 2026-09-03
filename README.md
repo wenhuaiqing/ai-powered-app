@@ -633,7 +633,9 @@ The pieces that show this is more than a happy-path demo:
   `WITH ... AS (...)` name extraction. Catches injection in `tests/agents/
   test_sql_validator.py`.
 - **Three-tier evals**:
-  - Tier 1 — `pytest backend/tests/` (51 cases, ~10s, runs every commit).
+  - Tier 1 — `pytest backend/tests/` (72 cases, ~5s, gated by
+    `.github/workflows/tests.yml` on every PR and push to main; hermetic,
+    so it needs no API keys).
   - Tier 2 — `evals/run.py --tier full` (14 golden cases + LLM-judge rubric).
   - Tier 3 — `.github/workflows/evals-smoke.yml` PR gate (7 cases, string
     assertions, no LLM judge).
