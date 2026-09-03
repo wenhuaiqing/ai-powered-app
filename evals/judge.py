@@ -5,14 +5,22 @@ Scores a single case's final answer + citations against the rubric:
   - citation_accuracy 1-5: do the citations support the claims? (Compliance/Market Watch only)
   - helpfulness       1-5: would an agent / buyer / tenant find this useful?
 
-Uses OpenAI structured outputs (response_format=JudgeVerdict) against
-the same OpenAI-compatible endpoint the app runs on (LLM_* env vars).
-Judge runs at temperature 0 so verdicts are reproducible in a session.
+Uses OpenAI structured outputs (response_format=JudgeVerdict). The judge
+is configured independently of the app under test via JUDGE_BASE_URL /
+JUDGE_API_KEY / JUDGE_MODEL, falling back to the LLM_* triple when those
+are unset. Keeping them separable is deliberate, for two reasons:
+scoring a model's output with that same model invites self-preference
+bias, and a judge inheriting only *part* of the app's config -- a model
+id from one provider against another provider's endpoint -- 404s on
+every call. Judge runs at temperature 0 so verdicts are reproducible in
+a session.
 """
 
 from __future__ import annotations
 
 import os
+import re
+import time
 from typing import Any, Literal
 
 from openai import OpenAI
@@ -63,12 +71,51 @@ class JudgeVerdict(BaseModel):
         ) / 3
 
 
-def _client() -> OpenAI | None:
+_JUDGE_MODEL_FALLBACK = "gpt-4-1-mini"
+_MAX_JUDGE_RETRIES = 3
+
+
+def _judge_config() -> tuple[str, str, str] | None:
+    """(endpoint, key, model) for the judge, or None if unconfigured.
+
+    JUDGE_* wins as a set. Otherwise the LLM_* triple is used as a set --
+    never a mix of the two, which is how you end up asking one provider
+    for another provider's model id.
+    """
+    endpoint = os.getenv("JUDGE_BASE_URL", "")
+    api_key = os.getenv("JUDGE_API_KEY", "")
+    if endpoint and api_key:
+        return endpoint, api_key, os.getenv("JUDGE_MODEL") or _JUDGE_MODEL_FALLBACK
+
     endpoint = os.getenv("LLM_BASE_URL", "")
     api_key = os.getenv("LLM_API_KEY", "")
-    if not endpoint or not api_key:
+    if endpoint and api_key:
+        return endpoint, api_key, os.getenv("LLM_CHAT_MODEL") or _JUDGE_MODEL_FALLBACK
+    return None
+
+
+def _client() -> OpenAI | None:
+    config = _judge_config()
+    if config is None:
         return None
+    endpoint, api_key, _ = config
     return OpenAI(base_url=endpoint, api_key=api_key)
+
+
+def _retry_after_seconds(exc: Exception) -> float | None:
+    response = getattr(exc, "response", None)
+    if response is not None:
+        try:
+            header = response.headers.get("retry-after")
+        except Exception:  # noqa: BLE001
+            header = None
+        if header:
+            try:
+                return float(header)
+            except ValueError:
+                pass
+    match = re.search(r"'retryDelay': '(\d+(?:\.\d+)?)s'", str(exc))
+    return float(match.group(1)) if match else None
 
 
 def judge_case(case: dict[str, Any], result: dict[str, Any]) -> JudgeVerdict | None:
@@ -77,7 +124,9 @@ def judge_case(case: dict[str, Any], result: dict[str, Any]) -> JudgeVerdict | N
     if client is None:
         return None
 
-    model = os.getenv("LLM_CHAT_MODEL", "gpt-4-1-mini")
+    config = _judge_config()
+    assert config is not None  # _client() would have returned None
+    model = config[2]
     citations_text = "\n".join(
         f"- [{c.get('source_type', 'local_corpus')}] {c.get('source')}: {c.get('snippet', '')[:200]}"
         for c in (result.get("citations") or [])
@@ -91,17 +140,31 @@ def judge_case(case: dict[str, Any], result: dict[str, Any]) -> JudgeVerdict | N
         f"Citations:\n{citations_text}"
     )
 
-    try:
-        completion = client.beta.chat.completions.parse(
-            model=model,
-            messages=[
-                {"role": "system", "content": JUDGE_SYSTEM_PROMPT},
-                {"role": "user", "content": user_payload},
-            ],
-            response_format=JudgeVerdict,
-            temperature=0,
-        )
-        return completion.choices[0].message.parsed
-    except Exception as exc:  # noqa: BLE001
-        print(f"  ! judge failed for {case['id']}: {exc}")
-        return None
+    from openai import RateLimitError
+
+    for attempt in range(_MAX_JUDGE_RETRIES):
+        try:
+            completion = client.beta.chat.completions.parse(
+                model=model,
+                messages=[
+                    {"role": "system", "content": JUDGE_SYSTEM_PROMPT},
+                    {"role": "user", "content": user_payload},
+                ],
+                response_format=JudgeVerdict,
+                temperature=0,
+            )
+            return completion.choices[0].message.parsed
+        except RateLimitError as exc:
+            # No node budget here, unlike the app, so a long wait is
+            # honourable -- a scored case beats a skipped one, and a
+            # skipped case silently drags the tier's average.
+            delay = _retry_after_seconds(exc) or 5.0 * (attempt + 1)
+            if attempt == _MAX_JUDGE_RETRIES - 1:
+                print(f"  ! judge rate-limited for {case['id']}, giving up")
+                return None
+            print(f"  . judge rate-limited for {case['id']}, waiting {delay:.0f}s")
+            time.sleep(delay)
+        except Exception as exc:  # noqa: BLE001
+            print(f"  ! judge failed for {case['id']}: {exc}")
+            return None
+    return None

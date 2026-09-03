@@ -1,0 +1,114 @@
+name: Eval full
+
+# Tier 2: all 14 golden cases plus the LLM-judge rubric.
+#
+# Deliberately NOT a PR gate. Judge scores are non-deterministic, so
+# gating merges on them would block changes for reasons unrelated to the
+# diff. This runs on a schedule instead, so the numbers are a trend line
+# rather than a verdict, and can be triggered by hand when a change
+# warrants it.
+#
+# --pace matters here. Free-tier chat endpoints meter per minute, and a
+# rate-limited agent call degrades to fallback text behind an HTTP 200 --
+# an unpaced unattended run would publish confident-looking scores for
+# answers no model produced.
+
+on:
+  schedule:
+    # 15:10 UTC Sunday = ~02:10 Monday Sydney, off-peak either way.
+    - cron: "10 15 * * 0"
+  workflow_dispatch:
+    inputs:
+      pace:
+        description: "Seconds between cases"
+        required: false
+        default: "8"
+
+jobs:
+  full:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    env:
+      # Chat endpoint for the app under test.
+      LLM_BASE_URL: ${{ secrets.LLM_BASE_URL }}
+      LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
+      # An absent secret resolves to "", which overrides the settings
+      # default instead of falling through to it. Spell the fallback out.
+      LLM_CHAT_MODEL: ${{ secrets.LLM_CHAT_MODEL || 'gemini-3.5-flash-lite' }}
+      # Embeddings. Required whenever the chat endpoint is a provider that
+      # does not serve text-embedding-3-small -- embed.py falls back to
+      # the LLM_* pair when these are unset, which would send embedding
+      # requests to the chat provider.
+      EMBED_BASE_URL: ${{ secrets.EMBED_BASE_URL }}
+      EMBED_API_KEY: ${{ secrets.EMBED_API_KEY }}
+      # The judge, deliberately separable from the app under test: a model
+      # scoring its own output invites self-preference bias.
+      JUDGE_BASE_URL: ${{ secrets.JUDGE_BASE_URL }}
+      JUDGE_API_KEY: ${{ secrets.JUDGE_API_KEY }}
+      JUDGE_MODEL: ${{ secrets.JUDGE_MODEL || 'gpt-4-1-mini' }}
+      TAVILY_API_KEY: ${{ secrets.TAVILY_API_KEY }}
+      PYTHONUTF8: "1"
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          cache-suffix: evals-full
+
+      - name: Set up Python 3.12
+        run: uv python install 3.12
+
+      - name: Install backend deps
+        working-directory: backend
+        run: uv sync
+
+      - name: Build data artefacts
+        working-directory: backend
+        run: |
+          uv run python ../scripts/build_db.py
+          uv run python ../scripts/train_model.py
+          uv run python ../scripts/stage_regulation_corpus.py
+          uv run python ../scripts/build_regulation_corpus.py
+          uv run python ../scripts/build_review_embeddings.py
+
+      - name: Start backend
+        working-directory: backend
+        run: |
+          uv run uvicorn src.main:app --port 8000 --log-level warning > ../backend.log 2>&1 &
+          echo $! > ../backend.pid
+          for i in $(seq 1 15); do
+            if curl -fs http://localhost:8000/health > /dev/null; then
+              echo "backend ready"; exit 0
+            fi
+            sleep 1
+          done
+          echo "backend failed to start"
+          cat ../backend.log
+          exit 1
+
+      - name: Run Tier 2 full
+        working-directory: backend
+        run: |
+          uv run python ../evals/run.py \
+            --tier full \
+            --backend http://localhost:8000 \
+            --pace "${{ github.event.inputs.pace || '8' }}"
+
+      - name: Upload results
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: eval-results-full
+          path: evals/results/*.json
+          if-no-files-found: ignore
+
+      - name: Tail backend log on failure
+        if: failure()
+        run: cat backend.log || true
+
+      - name: Stop backend
+        if: always()
+        run: kill "$(cat backend.pid)" 2>/dev/null || true
