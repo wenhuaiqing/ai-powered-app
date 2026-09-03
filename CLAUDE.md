@@ -2,7 +2,7 @@
 
 Mock of Reapit's "One Platform" — a portfolio demo built around Sydney house-price Kaggle data. Showcases multi-agent AI (LangGraph), RAG (NSW regulations), text-to-DuckDB, live web search (Tavily), and a RandomForest valuation model. Frontend mirrors Reapit's indigo/teal visual identity. Deployed on Azure Container Apps — see the root README for the live topology.
 
-The plan of record lives at `C:\Users\Owen.Wen\.claude\plans\under-misc-folder-each-quiet-starfish.md`. Read it before making structural changes.
+The plan of record lives at `~/.claude/plans/under-misc-folder-each-quiet-starfish.md` (outside this repo). Read it before making structural changes.
 
 ## Layout
 

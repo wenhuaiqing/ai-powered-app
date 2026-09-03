@@ -691,7 +691,7 @@ The whole build is anchored to a Plan-mode plan, refined live with the user
 across multiple iterations:
 
 ```
-C:\Users\Owen.Wen\.claude\plans\under-misc-folder-each-quiet-starfish.md
+~/.claude/plans/under-misc-folder-each-quiet-starfish.md
 ```
 
 Read that for the design rationale, the agent inputs/outputs spec, and the
