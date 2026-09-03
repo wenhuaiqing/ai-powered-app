@@ -34,17 +34,33 @@ variable "tavily_api_key" {
   sensitive   = true
 }
 
+# Which endpoint serves chat. Deliberately NOT derived from whether
+# gemini_api_key is set: Terraform propagates the key's sensitivity into
+# every expression touching it, which would redact LLM_BASE_URL and
+# LLM_CHAT_MODEL in plan output -- the two values most worth reading
+# before an apply. Keeping the selector separate keeps the plan legible.
+variable "chat_provider" {
+  description = "Endpoint serving chat: \"gemini\" or \"azure\". Embeddings always stay on Azure OpenAI."
+  type        = string
+  default     = "gemini"
+
+  validation {
+    condition     = contains(["gemini", "azure"], var.chat_provider)
+    error_message = "chat_provider must be \"gemini\" or \"azure\"."
+  }
+}
+
 variable "gemini_api_key" {
-  description = "Google AI Studio key. Chat runs on Gemini's free tier so the demo bills nothing; leave empty to keep chat on Azure OpenAI."
+  description = "Google AI Studio key. Required when chat_provider is \"gemini\"."
   type        = string
   sensitive   = true
   default     = ""
 }
 
 variable "gemini_chat_model" {
-  description = "Gemini model id for chat. Free tier: gemini-3.5-flash (best quality) or gemini-3.5-flash-lite (higher daily quota)."
+  description = "Gemini model id for chat. Use a Lite model: gemini-3.5-flash is capped at 5 requests/minute on the free tier, and one Orb run is 5-9 sequential LLM calls."
   type        = string
-  default     = "gemini-3.5-flash"
+  default     = "gemini-3.5-flash-lite"
 }
 
 variable "seed_client_ip" {
