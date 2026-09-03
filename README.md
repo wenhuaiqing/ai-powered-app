@@ -10,8 +10,9 @@ three-tier eval suite with a CI gate.
 
 > Status: **live on Azure.** Scale-to-zero Container Apps (nginx +
 > FastAPI as sidecars in one app), Azure Database for MySQL Flexible +
-> DuckDB, **Azure OpenAI for chat (gpt-4.1-mini) and embeddings
-> (text-embedding-3-small)** via the OpenAI-compatible surface, model +
+> DuckDB, **Gemini for chat (gemini-3.5-flash-lite) and Azure OpenAI for
+> embeddings (text-embedding-3-small)** on separate endpoints, both over
+> the OpenAI-compatible surface, model +
 > RAG parquets on public-read Blob, secrets in Key Vault via managed
 > identity, deploys via GitHub Actions with workload identity federation
 > (no static cloud keys in CI). Terraform in [`infra-azure/`](infra-azure/);
@@ -125,10 +126,11 @@ three-tier eval suite with a CI gate.
 ```
 
 - **Backend**: FastAPI + LangGraph + Pydantic + DuckDB + MySQL (OLTP via
-  SQLAlchemy + PyMySQL) + scikit-learn + Tavily. **LLM + embeddings on
-  Azure OpenAI** — gpt-4.1-mini via the OpenAI-compatible surface with
-  forced tool use for structured outputs, text-embedding-3-small
-  (1536-D). The provider sits behind a one-file dispatcher
+  SQLAlchemy + PyMySQL) + scikit-learn + Tavily. **Chat on Gemini,
+  embeddings on Azure OpenAI** — `gemini-3.5-flash-lite` with forced
+  tool use for structured outputs, `text-embedding-3-small` (1536-D),
+  each on its own endpoint but both speaking the OpenAI protocol.
+  The provider sits behind a one-file dispatcher
   (`services/llm.py` / `services/embed.py`); the original AWS Bedrock
   path is retained behind a settings flag as reference.
 - **Frontend**: React 18 + Vite 5 + React Router 7 + Recharts + Leaflet +
@@ -162,10 +164,10 @@ three-tier eval suite with a CI gate.
   │                                    │  backend egress                 │
   │             ┌──────────────────────┼──────────────────────┐          │
   │   ┌─────────┬────────┐   ┌─────────┬────────┐   ┌─────────┬────────┐ │
-  │   │ Azure OpenAI     │   │ MySQL Flexible   │   │ Blob storage     │ │
-  │   │ gpt-4.1-mini +   │   │ B1ms, free 12mo  │   │ public-read      │ │
-  │   │ text-embedding-  │   │ [OLTP: source    │   │ model.pkl + RAG  │ │
-  │   │ 3-small          │   │  of truth]       │   │ parquets         │ │
+  │   │ Gemini (chat)    │   │ MySQL Flexible   │   │ Blob storage     │ │
+  │   │ flash-lite       │   │ B1ms             │   │ public-read      │ │
+  │   │ + Azure OpenAI   │   │ [OLTP: source    │   │ model.pkl + RAG  │ │
+  │   │ embeddings       │   │  of truth]       │   │ parquets         │ │
   │   └──────────────────┘   └──────────────────┘   └──────────────────┘ │
   │                                                                      │
   │  ┌────────────────────────────────────────────────────────────────┐  │
@@ -354,26 +356,30 @@ ai-powered-app/
 
 ## Run locally
 
-You need an **OpenAI-compatible chat + embeddings endpoint** — the live
-demo points at Azure OpenAI's `/openai/v1` surface, but anything speaking
+You need **one or two OpenAI-compatible endpoints** — anything speaking
 the OpenAI protocol works — plus a Tavily key for Market Watch and the
-Compliance web fallback. Copy `.env.example` to `.env` and fill in:
+Compliance web fallback. The live demo splits them: chat on Gemini,
+embeddings on Azure OpenAI. Copy `.env.example` to `.env` and fill in:
 
 ```env
-# On Azure OpenAI, LLM_CHAT_MODEL / LLM_EMBED_MODEL are *deployment*
-# names (the chat deployment is `gpt-4-1-mini`, backing model
-# gpt-4.1-mini 2025-04-14). On stock OpenAI they are model ids.
-LLM_BASE_URL=https://<your-account>.openai.azure.com/openai/v1/
-LLM_API_KEY=<key>
-LLM_CHAT_MODEL=gpt-4-1-mini
+# Chat endpoint. Stay on a Lite model: gemini-3.5-flash is capped at 5
+# requests/minute, and one Orb run is 5-9 sequential LLM calls.
+LLM_BASE_URL=https://generativelanguage.googleapis.com/v1beta/openai/
+LLM_API_KEY=<Google AI Studio key>
+LLM_CHAT_MODEL=gemini-3.5-flash-lite
+
+# Embedding endpoint. Leave EMBED_* blank to reuse the chat endpoint.
+# On Azure OpenAI, LLM_EMBED_MODEL is a *deployment* name, not a model id.
+EMBED_BASE_URL=https://<your-account>.openai.azure.com/openai/v1/
+EMBED_API_KEY=<key>
 LLM_EMBED_MODEL=text-embedding-3-small
 
 TAVILY_API_KEY=<get a free one at tavily.com>
 ```
 
-`infra-azure/` provisions the Azure OpenAI account and prints both values
-(`terraform output -raw llm_base_url` / `llm_api_key`) — see
-[infra-azure/README.md](infra-azure/README.md).
+`infra-azure/` provisions the Azure OpenAI account used for embeddings and
+prints its values (`terraform output -raw llm_base_url` / `llm_api_key`)
+— see [infra-azure/README.md](infra-azure/README.md).
 
 The original AWS Bedrock path is still in the tree behind
 `LLM_PROVIDER=bedrock` / `EMBED_PROVIDER=bedrock` (Claude Sonnet 4.6 +
@@ -455,7 +461,7 @@ Terraform creates the resource group, Container Apps environment + the
 single `app`, the Azure OpenAI account and its two deployments, MySQL
 Flexible, the blob container, Key Vault + the backend's managed
 identity, and the GitHub OIDC federated credential. Afterwards: point
-`.env` at the new Azure OpenAI, rebuild the RAG parquets (the embedding
+`.env`'s `EMBED_*` at the new Azure OpenAI, rebuild the RAG parquets (the embedding
 model determines the vector width), upload artefacts to blob, seed
 MySQL once through a temporary firewall rule, then set the three repo
 secrets (`AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, `AZURE_SUBSCRIPTION_ID`)
@@ -630,7 +636,7 @@ The pieces that show this is more than a happy-path demo:
   - Tier 1 — `pytest backend/tests/` (51 cases, ~10s, runs every commit).
   - Tier 2 — `evals/run.py --tier full` (14 golden cases + LLM-judge rubric).
   - Tier 3 — `.github/workflows/evals-smoke.yml` PR gate (7 cases, string
-    assertions, no judge cost).
+    assertions, no LLM judge).
 - **Mobile shell** — `useMediaQuery` ≤1024px + a viewport-override context so
   reviewers can preview from desktop. Real responsive work, not "we put
   `@media` queries in." See `lib/useMediaQuery.js`,
@@ -646,8 +652,9 @@ The pieces that show this is more than a happy-path demo:
   `chat_structured(...)` / `chat_text(...)` from `services/llm.py`;
   embeddings go through `services/embed.py`. Both are one-file
   dispatchers keyed on `LLM_PROVIDER` / `EMBED_PROVIDER`, and both
-  provider modules expose the identical shape. The live path is Azure
-  OpenAI over the OpenAI-compatible surface; the AWS Bedrock path
+  provider modules expose the identical shape. The live path runs chat
+  and embeddings on *different* providers — Gemini and Azure OpenAI —
+  through the same two helpers; the AWS Bedrock path
   (`converse` with forced tool-use, plus a `cachePoint` after the system
   blocks so the 50-150 line agent prompts get cached at 5-min TTL) is
   retained behind the flag and still unit-tested. Re-pointing the whole
