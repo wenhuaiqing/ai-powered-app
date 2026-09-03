@@ -26,7 +26,11 @@ jobs:
       # went unnoticed until it degraded the live smoke to 5/7.
       LLM_BASE_URL:   ${{ secrets.LLM_BASE_URL }}
       LLM_API_KEY:    ${{ secrets.LLM_API_KEY }}
-      LLM_CHAT_MODEL: ${{ secrets.LLM_CHAT_MODEL }}
+      # A missing secret resolves to an empty string, and an empty env var
+      # OVERRIDES the settings default rather than falling through to it --
+      # which asks the provider for a model named "" and fails with a
+      # message about deployments that names neither cause nor fix.
+      LLM_CHAT_MODEL: ${{ secrets.LLM_CHAT_MODEL || 'gemini-3.5-flash-lite' }}
       # Embeddings. Required once the chat endpoint is a provider that
       # does not serve text-embedding-3-small: embed.py falls back to the
       # LLM_* pair when these are unset, which would send the corpus

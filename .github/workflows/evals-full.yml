@@ -33,7 +33,9 @@ jobs:
       # Chat endpoint for the app under test.
       LLM_BASE_URL: ${{ secrets.LLM_BASE_URL }}
       LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
-      LLM_CHAT_MODEL: ${{ secrets.LLM_CHAT_MODEL }}
+      # An absent secret resolves to "", which overrides the settings
+      # default instead of falling through to it. Spell the fallback out.
+      LLM_CHAT_MODEL: ${{ secrets.LLM_CHAT_MODEL || 'gemini-3.5-flash-lite' }}
       # Embeddings. Required whenever the chat endpoint is a provider that
       # does not serve text-embedding-3-small -- embed.py falls back to
       # the LLM_* pair when these are unset, which would send embedding
@@ -44,7 +46,7 @@ jobs:
       # scoring its own output invites self-preference bias.
       JUDGE_BASE_URL: ${{ secrets.JUDGE_BASE_URL }}
       JUDGE_API_KEY: ${{ secrets.JUDGE_API_KEY }}
-      JUDGE_MODEL: ${{ secrets.JUDGE_MODEL }}
+      JUDGE_MODEL: ${{ secrets.JUDGE_MODEL || 'gpt-4-1-mini' }}
       TAVILY_API_KEY: ${{ secrets.TAVILY_API_KEY }}
       PYTHONUTF8: "1"
 
