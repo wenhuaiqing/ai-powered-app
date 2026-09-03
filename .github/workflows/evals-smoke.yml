@@ -20,10 +20,19 @@ jobs:
     env:
       # The Tier 3 smoke needs the real LLM in the loop because it
       # asserts on actual planner output and answer content, not just
-      # heuristic routing. Set repo secrets LLM_BASE_URL + LLM_API_KEY
-      # from `terraform -chdir=infra-azure output` (Azure OpenAI).
+      # heuristic routing. Point these at whatever production runs -- a
+      # gate validating a provider the live demo does not use would miss
+      # provider-specific failures, which is how a 5-requests/minute cap
+      # went unnoticed until it degraded the live smoke to 5/7.
       LLM_BASE_URL:   ${{ secrets.LLM_BASE_URL }}
       LLM_API_KEY:    ${{ secrets.LLM_API_KEY }}
+      LLM_CHAT_MODEL: ${{ secrets.LLM_CHAT_MODEL }}
+      # Embeddings. Required once the chat endpoint is a provider that
+      # does not serve text-embedding-3-small: embed.py falls back to the
+      # LLM_* pair when these are unset, which would send the corpus
+      # build's embedding requests to the chat provider.
+      EMBED_BASE_URL: ${{ secrets.EMBED_BASE_URL }}
+      EMBED_API_KEY:  ${{ secrets.EMBED_API_KEY }}
       TAVILY_API_KEY: ${{ secrets.TAVILY_API_KEY }}
       PYTHONUTF8: "1"
 

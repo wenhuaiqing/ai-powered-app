@@ -285,6 +285,18 @@ def main() -> int:
     parser.add_argument("--filter", default=None, help="case-id substring filter")
     parser.add_argument("--backend", default=DEFAULT_BACKEND)
     parser.add_argument("--out", default=None, help="results JSON path; defaults to evals/results/<timestamp>.json")
+    parser.add_argument(
+        "--pace",
+        type=float,
+        default=0.0,
+        help=(
+            "seconds to wait between cases. Free-tier chat endpoints meter "
+            "per minute, and a rate-limited agent call degrades to fallback "
+            "text behind an HTTP 200 -- so an unpaced run can report "
+            "confident-looking scores for answers no model produced. Use "
+            "this for unattended runs."
+        ),
+    )
     args = parser.parse_args()
 
     cases = load_cases(filter_substr=args.filter, tier=args.tier)
@@ -307,7 +319,9 @@ def main() -> int:
     print()
 
     summary = []
-    for case in cases:
+    for index, case in enumerate(cases):
+        if args.pace and index:
+            time.sleep(args.pace)
         result = run_case(case, args.backend)
         smoke = smoke_assertions(case, result)
         row: dict[str, Any] = {
