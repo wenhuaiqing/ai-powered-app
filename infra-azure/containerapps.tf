@@ -10,6 +10,12 @@
 # Secrets come from Key Vault via a user-assigned managed identity --
 # nothing sensitive in app config or images ("keys nowhere").
 
+locals {
+  # Non-sensitive selector -- see variables.tf for why this is not
+  # `var.gemini_api_key != ""`.
+  use_gemini = var.chat_provider == "gemini"
+}
+
 resource "azurerm_container_app_environment" "main" {
   name                       = "cae-${var.prefix}"
   location                   = azurerm_resource_group.main.location
@@ -71,13 +77,21 @@ resource "azurerm_key_vault_secret" "llm_api_key" {
   depends_on   = [azurerm_role_assignment.kv_admin_self]
 }
 
-# Chat key. Gemini's free tier when var.gemini_api_key is set (the demo's
-# zero-cost posture), otherwise the Azure OpenAI key.
+# Chat key: Gemini when chat_provider selects it, else Azure OpenAI.
 resource "azurerm_key_vault_secret" "chat_api_key" {
   name         = "chat-api-key"
-  value        = var.gemini_api_key != "" ? var.gemini_api_key : azurerm_cognitive_account.openai.primary_access_key
+  value        = local.use_gemini ? var.gemini_api_key : azurerm_cognitive_account.openai.primary_access_key
   key_vault_id = azurerm_key_vault.main.id
   depends_on   = [azurerm_role_assignment.kv_admin_self]
+
+  lifecycle {
+    # Without this, selecting gemini with no key silently stores the
+    # Azure key against the Gemini endpoint -- every chat call 401s.
+    precondition {
+      condition     = !local.use_gemini || var.gemini_api_key != ""
+      error_message = "chat_provider is \"gemini\" but gemini_api_key is empty. Set gemini_api_key in terraform.tfvars, or set chat_provider = \"azure\"."
+    }
+  }
 }
 
 resource "azurerm_key_vault_secret" "mysql_password" {
@@ -200,13 +214,12 @@ resource "azurerm_container_app" "app" {
         name  = "ARTEFACT_BASE_URL"
         value = "${azurerm_storage_account.artefacts.primary_blob_endpoint}${azurerm_storage_container.artefacts.name}"
       }
-      # Chat on Gemini's free tier (AUD 0 tokens), embeddings left on
-      # Azure OpenAI: query-time embedding spend rounds to nothing and
-      # moving it would mean rebuilding the RAG parquets. Unset the
-      # gemini_api_key var and both fall back to Azure OpenAI.
+      # Chat follows chat_provider; embeddings always stay on Azure
+      # OpenAI, because swapping the embedding model means rebuilding the
+      # RAG parquets so corpus and query vectors match.
       env {
         name  = "LLM_BASE_URL"
-        value = var.gemini_api_key != "" ? "https://generativelanguage.googleapis.com/v1beta/openai/" : "${azurerm_cognitive_account.openai.endpoint}openai/v1/"
+        value = local.use_gemini ? "https://generativelanguage.googleapis.com/v1beta/openai/" : "${azurerm_cognitive_account.openai.endpoint}openai/v1/"
       }
       env {
         name        = "LLM_API_KEY"
@@ -214,7 +227,7 @@ resource "azurerm_container_app" "app" {
       }
       env {
         name  = "LLM_CHAT_MODEL"
-        value = var.gemini_api_key != "" ? var.gemini_chat_model : azurerm_cognitive_deployment.chat.name
+        value = local.use_gemini ? var.gemini_chat_model : azurerm_cognitive_deployment.chat.name
       }
       env {
         name  = "EMBED_BASE_URL"

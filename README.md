@@ -21,8 +21,8 @@ three-tier eval suite with a CI gate.
 >
 > **Live demo:** https://app.blackwave-53cf4f76.australiaeast.azurecontainerapps.io
 > (HTTPS with managed TLS; scale-to-zero means the first request after
-> idle takes ~30-60s to wake the platform - a deliberate ~$0/month
-> design, and the Orb retries through it).
+> idle takes ~30-60s to wake the platform - a deliberate trade, and the
+> Orb retries through it).
 
 ---
 
@@ -206,14 +206,17 @@ MySQL Flexible → execs uvicorn. First request after idle: ~30-60s.
 MySQL is the source of truth for OLTP data; Blob is the source of truth
 for the trained model + RAG corpora.
 
-**Cost posture:** AUD 0/month, deliberately — not "cheap", zero.
-Scale-to-zero apps inside the never-expiring Container Apps grant,
-12-month-free B1ms MySQL, free blob tier, GHCR images, and **chat on
-Gemini's free tier** so LLM tokens bill nothing. Embeddings stay on
-Azure OpenAI because query-time embedding spend rounds to zero and
-moving them means rebuilding the RAG corpus. Trade-offs, the free-grant
-headroom, and the Sep 2027 MySQL cliff are in
-[`infra-azure/README.md`](infra-azure/README.md).
+**Provider split:** chat and embeddings sit on separate endpoints, both
+spoken over the OpenAI protocol — chat on Gemini
+(`gemini-3.5-flash-lite`), embeddings on Azure OpenAI
+(`text-embedding-3-small`, 1536-D). `LLM_BASE_URL` / `LLM_API_KEY` drive
+chat; `EMBED_BASE_URL` / `EMBED_API_KEY` drive embeddings and fall back
+to the `LLM_*` pair when unset, so a single-provider setup needs no extra
+config. The split exists because the two have different constraints: the
+graph is sequential and one Orb run is 5-9 LLM calls, so the chat model
+is picked for per-minute request headroom, while swapping the embedding
+model would mean rebuilding the RAG parquets to match vector widths.
+Operational notes are in [`infra-azure/README.md`](infra-azure/README.md).
 
 ## Data architecture
 
@@ -409,7 +412,7 @@ uv run pytest                         # 51 tests, ~10s
 # Tier-3 eval smoke (against the running backend)
 uv run python ../evals/run.py --tier smoke
 
-# Tier-2 LLM-judge full run (~$0.50 in LLM tokens, ~3 min)
+# Tier-2 LLM-judge full run (~3 min)
 uv run python ../evals/run.py --tier full
 ```
 
@@ -660,12 +663,11 @@ The pieces that show this is more than a happy-path demo:
   private subnets, ALB, ECR, ECS Fargate, Secrets Manager, OIDC trust) is
   kept as reference. Migrating between two clouds without changing an
   agent is the part worth reading.
-- **Zero standing credentials, and a bill to match.** Runtime secrets live
-  in Key Vault and reach the container as secret references resolved by
-  managed identity; CI authenticates by workload identity federation. The
-  app scales to zero between visits, so the demo costs ~$0-3/month and the
-  cold-start honesty note in the header is a deliberate trade, not an
-  oversight.
+- **Zero standing credentials.** Runtime secrets live in Key Vault and
+  reach the container as secret references resolved by managed identity;
+  CI authenticates by workload identity federation. The app scales to
+  zero between visits, and the cold-start honesty note in the header is a
+  deliberate trade, not an oversight.
 - **OLTP + OLAP split with a real pipeline**. Properties + leads + listings
   + agent_runs + lead_events live in RDS MySQL (transactional, normalised,
   audit log on lead status transitions, every Rai prompt persisted).
@@ -695,9 +697,9 @@ These are honest follow-ups, not blockers:
   renews a managed certificate for the `*.azurecontainerapps.io`
   hostname. A vanity domain needs a CNAME + a managed-certificate
   binding; ~30 min once a domain is parked.
-- **Warm path for reviewers**. Scale-to-zero is the right default at
-  ~$0/month, but a scheduled ping (or `min_replicas = 1` for a review
-  window) would remove the first-hit wait entirely.
+- **Warm path for reviewers**. Scale-to-zero is the right default, but a
+  scheduled ping (or `min_replicas = 1` for a review window) would remove
+  the first-hit wait entirely.
 - **Observability upgrade**. LangSmith or OpenTelemetry tracing so every
   node + tool call + retry shows up in a real dashboard (structured
   stdout through Container Apps log analytics works today).
@@ -705,7 +707,7 @@ These are honest follow-ups, not blockers:
   trends pass-rate-per-day with sparklines.
 - **Drag-to-close** on the mobile bottom sheet (UX polish).
 - **Private networking, multi-replica, WAF** — overkill for a portfolio
-  demo, deliberately omitted. Cost and limit trade-offs are written down
+  demo, deliberately omitted. Trade-offs and limits are written down
   in [`infra-azure/README.md`](infra-azure/README.md) (and, for the AWS
   build, [`infra/README.md`](infra/README.md)).
 

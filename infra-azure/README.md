@@ -2,10 +2,10 @@
 
 Terraform for the Azure topology (Container Apps + Azure OpenAI + MySQL
 Flexible + Blob + Key Vault + workload identity federation). Design
-rule: **AUD 0/month** after the $200 trial credits - scale-to-zero
-apps, 12-month free MySQL B1ms, free blob tier, GHCR images, and chat on
-Gemini's free tier. Azure OpenAI is kept for embeddings only (a query
-embedding is ~40 tokens, so it rounds to 0.00 on the invoice).
+rule: scale-to-zero everywhere, GHCR images, and chat on Gemini with
+embeddings on Azure OpenAI. `chat_provider` selects the chat endpoint;
+embeddings stay on Azure regardless, because swapping the embedding model
+means rebuilding the RAG parquets so corpus and query vectors match.
 
 ```
 Internet -> frontend (ACA, public, managed TLS)
@@ -38,11 +38,11 @@ another by hand or the apply will fail on quota.
    any az/terraform command for this project.
 2. **Terraform** >= 1.7 (`winget install Hashicorp.Terraform`).
 3. `infra-azure/terraform.tfvars` (gitignored) with
-   `tavily_api_key = "..."` and `gemini_api_key = "..."` - the latter is
-   a Google AI Studio key (aistudio.google.com/apikey) and is what keeps
-   the LLM bill at zero. Omit it and chat falls back to Azure OpenAI at
-   ~AUD 1-3/month. It must stay in tfvars: a bare `terraform apply`
-   without it reverts chat to Azure OpenAI.
+   `tavily_api_key = "..."` and `gemini_api_key = "..."` (a Google AI
+   Studio key from aistudio.google.com/apikey). The key must stay in
+   tfvars - `chat_provider` defaults to `"gemini"`, and applying without
+   the key trips a precondition rather than deploying a broken chat path.
+   Set `chat_provider = "azure"` to serve chat from Azure OpenAI instead.
    (gitignored; generated from .env). No other secret input - the LLM
    key is created by Terraform and wired into Key Vault directly.
 
@@ -191,13 +191,18 @@ uv run --python 3.12 python ..\evals\run.py --tier smoke --backend $url
   `LIMIT` -> `OFFSET...FETCH`). Zero-code fallback: TiDB Cloud Starter,
   which is MySQL wire-compatible. Aiven's free MySQL is out - it reaps
   services left idle, which is exactly this demo's pattern.
-- **Gemini free-tier limits**: chat runs on `gemini-3.5-flash` free
-  tier. Google no longer publishes static limits (they are per-project,
-  visible in AI Studio), but reported figures are ~15 RPM. The Property
-  Matcher run fans valuation out across ~5 candidates, so it can reach
-  12-15 calls in a minute - the closest thing to a ceiling here. A 429
-  degrades to keyword routing rather than failing, but it will look
-  worse in a live demo. Set `gemini_api_key = ""` to fall straight back
-  to Azure OpenAI.
+- **Gemini rate limits, measured 03/09/2026**: the free-tier quota is
+  per model (`GenerateRequestsPerMinutePerProjectPerModel`).
+  `gemini-3.5-flash` is **5 requests/minute** - unusable here, because
+  the graph is sequential and one Orb run is 5-9 LLM calls, so a single
+  question exhausts it and the 429 asks for a ~31s retry, past the 30s
+  per-node timeout. Symptom is a quiet degrade, not an error: planner
+  falls back to keyword routing and the summariser to templated text, so
+  the smoke suite drops to 5/7 with no crash. `gemini-3.5-flash-lite`
+  and `gemini-3.1-flash-lite` cleared 14 rapid calls with no 429 and
+  smoke-test 7/7. Keep `gemini_chat_model` on a Lite model. Planner
+  routing measures 5/5 on gpt-4-1-mini, flash-lite, mistral-small and
+  mistral-medium alike, so the model choice here is about request
+  headroom, not capability.
 - **Model deprecation**: gpt-4.1-mini retires 2027-04. Swapping models
   is a config change (new azurerm_cognitive_deployment + env value).
