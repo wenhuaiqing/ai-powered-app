@@ -2,7 +2,7 @@
 // the URL slug and the sidebar label.
 // for the 6-route demo.
 
-import { Building2, Calculator, Home, LineChart, ScaleIcon, Users } from "lucide-react";
+import { Building2, Calculator, Home, LineChart, ScaleIcon, School, Users } from "lucide-react";
 
 const PAGE_MODULES = import.meta.glob("./pages/*/*.jsx", { eager: true });
 
@@ -14,10 +14,13 @@ export const MODULE_META = {
   Valuations:  { label: "Valuations",      icon: Calculator,  order: 3 },
   Compliance:  { label: "Compliance Hub",  icon: ScaleIcon,   order: 4 },
   Insights:    { label: "Market Insights", icon: LineChart,   order: 5 },
+  DoubleCatchment: { label: "Double Catchment", icon: School, order: 6 },
 };
 
 function slugify(value) {
   return value
+    // Split CamelCase section folders (DoubleCatchment -> double-catchment).
+    .replace(/([a-z0-9])([A-Z])/g, "$1-$2")
     .toLowerCase()
     .replace(/&/g, "and")
     .replace(/[^a-z0-9]+/g, "-")
