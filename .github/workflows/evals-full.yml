@@ -24,6 +24,15 @@ on:
         required: false
         default: "8"
 
+# Both eval workflows draw on one free-tier Gemini key, metered at 15
+# requests/minute per project per model. Run concurrently they share that
+# bucket: on 09/09 a smoke run and a full run started one second apart and
+# the full run's first two cases hit 429s until the smoke run finished.
+# Same group name in both workflows, so they queue rather than overlap.
+concurrency:
+  group: gemini-free-tier
+  cancel-in-progress: false
+
 jobs:
   full:
     runs-on: ubuntu-latest

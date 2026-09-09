@@ -42,6 +42,12 @@ import yaml
 from dotenv import load_dotenv
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
+# CI runs this as `uv run python ../evals/run.py` from backend/, which puts
+# evals/ (the script dir) on sys.path but not the repo root, so the `evals`
+# package is not importable. Only --tier full ever imports it, so the smoke
+# gate passed for weeks while the scheduled full run died on ModuleNotFoundError.
+sys.path.insert(0, str(REPO_ROOT))
+from evals.judge import judge_case  # noqa: E402  (fail at startup, not per case)
 CASES_DIR = Path(__file__).resolve().parent / "cases"
 RESULTS_DIR = Path(__file__).resolve().parent / "results"
 DEFAULT_BACKEND = "http://localhost:8000"
@@ -336,7 +342,6 @@ def main() -> int:
             "final_message_preview": (result.get("final_message") or "")[:280],
         }
         if args.tier == "full":
-            from evals.judge import judge_case
             verdict = judge_case(case, result)
             if verdict:
                 row["judge"] = verdict.model_dump()
