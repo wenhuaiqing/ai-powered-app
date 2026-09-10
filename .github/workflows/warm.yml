@@ -1,0 +1,57 @@
+name: Warm
+
+# Keeps the demo warm in two weekday windows, so a viewer in those windows
+# gets a 0.1 s response instead of the ~30 s scale-from-zero:
+#   10:00-11:30 AEST  (00:00-01:30 UTC)
+#   14:00-15:00 AEST  (04:00-05:00 UTC)
+# Brisbane has no daylight saving, so the UTC offset is a fixed +10.
+#
+# Each ping is an external request through ingress, which resets the app's
+# 30-minute scale-to-zero cooldown. Pings are 20 minutes apart so a GitHub
+# cron that fires a few minutes late cannot open a gap wide enough for the
+# app to scale down mid-window, and the last ping in each window sits 30
+# minutes before the window ends, so the replica lives exactly through it
+# and no further. Alive time: ~2.5 h per weekday, ~55 h/month.
+#
+# Budget: the Consumption plan grants 180k vCPU-s and 360k GiB-s a month,
+# which at this app's 0.75 vCPU / 1.5 GiB is ~66.7 h of replica time. The
+# schedule uses ~55 h of it; the rest covers real visits outside the
+# windows (~32 min each). The subscription's budget alert is the tripwire
+# if that ever drifts. These pings are ordinary requests - seven a day
+# against a 2M/month grant.
+#
+# GitHub disables scheduled workflows after 60 days without activity on the
+# default branch - any push to main re-enables them.
+#
+# workflow_dispatch: warm it on demand before a screen-share.
+
+on:
+  schedule:
+    - cron: "0,20,40 0 * * 1-5"   # 10:00, 10:20, 10:40 AEST
+    - cron: "0 1 * * 1-5"         # 11:00 AEST -> cooldown ends 11:30
+    - cron: "0,20,30 4 * * 1-5"   # 14:00, 14:20, 14:30 AEST -> cooldown ends 15:00
+  workflow_dispatch: {}
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - name: Ping /health (a cold start is held by the platform, ~30 s)
+        run: |
+          url="https://app.blackwave-53cf4f76.australiaeast.azurecontainerapps.io/health"
+          start=$(date +%s)
+          code="000"
+          for attempt in 1 2 3; do
+            code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 240 "$url" || echo "000")
+            [ "$code" = "200" ] && break
+            sleep 10
+          done
+          took=$(( $(date +%s) - start ))
+          echo "HTTP $code after ${took}s (attempt $attempt)"
+          {
+            echo "| When (UTC) | Result | Time to 200 | Attempts |"
+            echo "|---|---|---|---|"
+            echo "| $(date -u +'%Y-%m-%d %H:%M') | HTTP $code | ${took}s | $attempt |"
+          } >> "$GITHUB_STEP_SUMMARY"
+          [ "$code" = "200" ]
