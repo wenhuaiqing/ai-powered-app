@@ -191,6 +191,14 @@ resource "azurerm_container_app" "app" {
   template {
     min_replicas = 0 # scale to zero: the whole point
     max_replicas = 1
+    # 30 min rather than the 5 min default. A viewer who leaves and comes
+    # back, or a pre-warm before a screen-share, then does not pay the ~36 s
+    # cold start twice. Alive time is drawn from the never-expiring free
+    # grant (180k vCPU-s/month = ~66 h at this app's 0.75 vCPU), so each
+    # isolated visit costs ~32 min of it: ~120 isolated visits a month
+    # before the grant is touched. Watch the vCPU-seconds metric if
+    # crawlers start hitting the public URL.
+    cooldown_period_in_seconds = 1800
 
     container {
       name   = "frontend"
@@ -209,6 +217,23 @@ resource "azurerm_container_app" "app" {
       image  = var.backend_image
       cpu    = 0.5
       memory = "1Gi"
+
+      # Without this, nginx (the ingress target) is ready the instant it
+      # starts, and ingress routes to the replica ~5 s before uvicorn is
+      # listening on 8000 - the viewer gets a 502 from nginx. With it, a
+      # replica is not ready until the backend answers /health, so the
+      # platform keeps holding the request and a cold start is a wait, not
+      # an error. Probe traffic is not billable. No liveness probe on
+      # purpose: nothing here should kill a slow boot.
+      readiness_probe {
+        transport               = "HTTP"
+        port                    = 8000
+        path                    = "/health"
+        interval_seconds        = 5
+        timeout                 = 3
+        failure_count_threshold = 10
+        success_count_threshold = 1
+      }
 
       env {
         name  = "ARTEFACT_BASE_URL"
