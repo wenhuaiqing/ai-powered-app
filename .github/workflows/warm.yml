@@ -43,7 +43,9 @@ jobs:
           start=$(date +%s)
           code="000"
           for attempt in 1 2 3; do
-            code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 240 "$url" || echo "000")
+            # curl prints 000 itself when the connection fails; '|| true' keeps
+            # the loop alive without appending a second 000 to it.
+            code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 240 "$url" || true)
             [ "$code" = "200" ] && break
             sleep 10
           done
