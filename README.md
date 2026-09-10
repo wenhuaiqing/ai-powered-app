@@ -383,7 +383,7 @@ prints its values (`terraform output -raw llm_base_url` / `llm_api_key`)
 
 The original AWS Bedrock path is still in the tree behind
 `LLM_PROVIDER=bedrock` / `EMBED_PROVIDER=bedrock` (Claude Sonnet 4.6 +
-Titan Embed v2; needs AWS credentials and Bedrock model access). The
+Titan Embed v2; needs AWS credentials and Bedrock model access). Install its client with `uv sync --extra bedrock` - boto3 is not part of the runtime image. The
 embedding dimensions differ — 1536-D for text-embedding-3-small against
 1024-D for Titan v2 — so switching providers means rebuilding the RAG
 parquets with `build_regulation_corpus.py` + `build_review_embeddings.py`.

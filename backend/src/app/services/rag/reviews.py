@@ -8,6 +8,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
+import duckdb
 import numpy as np
 import pandas as pd
 
@@ -51,7 +52,10 @@ def _corpus() -> tuple[pd.DataFrame, np.ndarray] | None:
     if not path.exists():
         log.warning("Review embeddings not found at %s — reviews retrieval will return no hits", path)
         return None
-    df = pd.read_parquet(path)
+    # DuckDB reads parquet natively; pandas.read_parquet would pull in
+    # pyarrow (83 MB) purely for this one call, and DuckDB is already a
+    # runtime dependency. Same DataFrame out, list column intact.
+    df = duckdb.read_parquet(str(path)).df()
     matrix = np.array(df["embedding"].tolist(), dtype=np.float32)
     norms = np.linalg.norm(matrix, axis=1, keepdims=True)
     norms = np.where(norms == 0, 1.0, norms)
