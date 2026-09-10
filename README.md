@@ -22,8 +22,9 @@ three-tier eval suite with a CI gate.
 >
 > **Live demo:** https://app.blackwave-53cf4f76.australiaeast.azurecontainerapps.io
 > (HTTPS with managed TLS; scale-to-zero means the first request after
-> idle takes ~30-60s to wake the platform - a deliberate trade, and the
-> Orb retries through it).
+> idle takes ~30 s to wake the platform outside the weekday warm windows
+> (10-11:30 am and 2-3 pm AEST) - a deliberate trade, and the platform
+> holds the request rather than erroring).
 
 ---
 
@@ -706,9 +707,11 @@ These are honest follow-ups, not blockers:
   renews a managed certificate for the `*.azurecontainerapps.io`
   hostname. A vanity domain needs a CNAME + a managed-certificate
   binding; ~30 min once a domain is parked.
-- **Warm path for reviewers**. Scale-to-zero is the right default, but a
-  scheduled ping (or `min_replicas = 1` for a review window) would remove
-  the first-hit wait entirely.
+- **Warm windows** - shipped. `.github/workflows/warm.yml` pings the app
+  every 20 minutes during 10:00-11:30 and 14:00-15:00 AEST on weekdays,
+  so viewers in those windows skip the cold start; `workflow_dispatch`
+  warms it on demand before a screen-share. Outside the windows it
+  scales to zero as before.
 - **Observability upgrade**. LangSmith or OpenTelemetry tracing so every
   node + tool call + retry shows up in a real dashboard (structured
   stdout through Container Apps log analytics works today).

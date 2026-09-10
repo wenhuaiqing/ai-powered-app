@@ -178,7 +178,10 @@ uv run --python 3.12 python ..\evals\run.py --tier smoke --backend $url
   360k GiB-s covers 0.75 vCPU / 1.5 GiB of sidecars for **66 h of
   active replica time per month**. Both meters bind at the same point.
   Depends on `min_replicas = 0`; setting it to 1 is 730 h/month and
-  leaves the grant entirely. Price it before flipping it.
+  leaves the grant entirely. Price it before flipping it. The scheduled warm windows in
+  `.github/workflows/warm.yml` (10-11:30 and 14-15 AEST, weekdays) use
+  ~55 h of the ~66 h; keep any new schedule inside the remainder, and
+  remember a real visit outside the windows costs ~32 min of it.
 - **MySQL free window**: B1ms is free for 12 months, then **AUD ~30/month**
   at australiaeast list (B1MS 0.0362/h = 26.43, plus 20 GB at
   0.1919/GB = 3.84) - roughly double the USD figure this file used to
