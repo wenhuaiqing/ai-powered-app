@@ -707,11 +707,12 @@ These are honest follow-ups, not blockers:
   renews a managed certificate for the `*.azurecontainerapps.io`
   hostname. A vanity domain needs a CNAME + a managed-certificate
   binding; ~30 min once a domain is parked.
-- **Warm windows** - shipped. `.github/workflows/warm.yml` pings the app
-  every 20 minutes during 10:00-11:30 and 14:00-15:00 AEST on weekdays,
-  so viewers in those windows skip the cold start; `workflow_dispatch`
-  warms it on demand before a screen-share. Outside the windows it
-  scales to zero as before.
+- **Warm windows** - shipped. Azure Container Apps cron jobs
+  (`infra-azure/warm.tf`) ping the app every 20 minutes during
+  10:00-11:30 and 14:00-15:00 AEST on weekdays, so viewers in those
+  windows skip the cold start; `.github/workflows/warm.yml`
+  (`workflow_dispatch`) warms it on demand before a screen-share.
+  Outside the windows it scales to zero as before.
 - **Observability upgrade**. LangSmith or OpenTelemetry tracing so every
   node + tool call + retry shows up in a real dashboard (structured
   stdout through Container Apps log analytics works today).

@@ -1,35 +1,17 @@
 name: Warm
 
-# Keeps the demo warm in two weekday windows, so a viewer in those windows
-# gets a 0.1 s response instead of the ~30 s scale-from-zero:
-#   10:00-11:30 AEST  (00:00-01:30 UTC)
-#   14:00-15:00 AEST  (04:00-05:00 UTC)
-# Brisbane has no daylight saving, so the UTC offset is a fixed +10.
+# On-demand warm-up for the demo: run this from the Actions tab (or your
+# phone) ~90 s before a screen-share and the app is hot for the next 30
+# minutes. It waits through a cold start (the platform holds the request),
+# then reports the time-to-200 in the step summary.
 #
-# Each ping is an external request through ingress, which resets the app's
-# 30-minute scale-to-zero cooldown. Pings are 20 minutes apart so a GitHub
-# cron that fires a few minutes late cannot open a gap wide enough for the
-# app to scale down mid-window, and the last ping in each window sits 30
-# minutes before the window ends, so the replica lives exactly through it
-# and no further. Alive time: ~2.5 h per weekday, ~55 h/month.
-#
-# Budget: the Consumption plan grants 180k vCPU-s and 360k GiB-s a month,
-# which at this app's 0.75 vCPU / 1.5 GiB is ~66.7 h of replica time. The
-# schedule uses ~55 h of it; the rest covers real visits outside the
-# windows (~32 min each). The subscription's budget alert is the tripwire
-# if that ever drifts. These pings are ordinary requests - seven a day
-# against a 2M/month grant.
-#
-# GitHub disables scheduled workflows after 60 days without activity on the
-# default branch - any push to main re-enables them.
-#
-# workflow_dispatch: warm it on demand before a screen-share.
+# The SCHEDULED warm windows (10:00-11:30 and 14:00-15:00 AEST, weekdays)
+# are Azure Container Apps cron Jobs in infra-azure/warm.tf, not GitHub
+# schedules: GitHub's cron is best-effort and on 11/09/2026 fired zero of
+# four morning pings. Execution history:
+#   az containerapp job execution list -n job-warm-am -g rg-aipapp -o table
 
 on:
-  schedule:
-    - cron: "0,20,40 0 * * 1-5"   # 10:00, 10:20, 10:40 AEST
-    - cron: "0 1 * * 1-5"         # 11:00 AEST -> cooldown ends 11:30
-    - cron: "0,20,30 4 * * 1-5"   # 14:00, 14:20, 14:30 AEST -> cooldown ends 15:00
   workflow_dispatch: {}
 
 jobs:
